@@ -8,20 +8,20 @@ import "scraper"
 
 type LoadBoard interface {
 	Init() error
-	Read(chan<- scraper.Scrape)
+	Read(chan<- scraper.Page)
 }
 
 type Load struct {
-	Date time.Time
-	OriginCity string
+	Date        time.Time
+	OriginCity  string
 	OriginState string
-	DestCity string
-	DestState string
-	Load string
-	Length int
-	Weight int
-	Equipment string
-	Price float64
-	Stops int
-	Phone string
+	DestCity    string
+	DestState   string
+	Load        string
+	Length      int
+	Weight      int
+	Equipment   string
+	Price       float64
+	Stops       int
+	Phone       string
 }

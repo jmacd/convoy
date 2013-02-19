@@ -32,37 +32,37 @@ var equipmentTypes = []string{
 }
 
 const (
-	baseUri = "/Trulos/Post-Truck-Loads/Truck-Load-Board.aspx"
-	contentId = "ContentPlaceHolder1_GridView1"
-	// TODO(jmacd): It's escaped in the raw HTML! 
-	pageRegexp = "javascript:__doPostBack\\('[a-zA-Z0-9$]+','Page$\\d+'\\)"
+	baseUri       = "/Trulos/Post-Truck-Loads/Truck-Load-Board.aspx"
+	contentId     = "ContentPlaceHolder1_GridView1"
+	escapedRegexp = `[a-zA-Z0-9$&#;,]`
+	pageRegexp    = `__doPostBack\(` + escapedRegexp +
+		`+Page` + escapedRegexp + `+\)`
 )
 
 type trulosBoard struct {
-	host  string
-	stateRe   *regexp.Regexp
+	host    string
+	stateRe *regexp.Regexp
 	pageRe  *regexp.Regexp
-	states []*trulosState
+	procCh  chan *scraper.Result
+	states  []*trulosState
 }
 
 type trulosState struct {
 	board *trulosBoard
-	name string
-	uri string
+	name  string
+	uri   string
 }
 
 type trulosScrape struct {
-	state *trulosState
-	equip string
-	body  []byte
-	actions [][]byte
-	xml   []byte
-	post  chan<- scraper.Scrape  
+	state   *trulosState
+	equip   string
+	body    []byte
+	actions []string
 }
 
 func NewTrulos() (LoadBoard, error) {
 	stateRe, err := regexp.Compile(
-		regexp.QuoteMeta(baseUri + "?STATE=") + "(\\w+)")
+		regexp.QuoteMeta(baseUri+"?STATE=") + "(\\w+)")
 	if err != nil {
 		log.Print("Invalid Trulos State regexp")
 		return nil, err
@@ -72,16 +72,20 @@ func NewTrulos() (LoadBoard, error) {
 		log.Print("Invalid Trulos Page regexp")
 		return nil, err
 	}
-	return &trulosBoard{ "www.trulos.com", stateRe, pageRe, nil }, nil
+	procCh := make(chan *scraper.Result)
+	board := &trulosBoard{"www.trulos.com", stateRe,
+		pageRe, procCh, nil}
+	go board.ProcessScrapes()
+	return board, nil
 }
 
 func (t *trulosBoard) Init() error {
-	body, err := ReadUrl(t.host, "", "")
+	body, err := GetUrl(t.host, "", "")
 	if err != nil {
 		return err
 	}
 	links := t.stateRe.FindAllStringSubmatch(string(body), -1)
-	for _, si  := range links {
+	for _, si := range links {
 		t.states = append(t.states, &trulosState{t, si[1], si[0]})
 	}
 	return nil
@@ -93,35 +97,34 @@ func (s *trulosState) queryForEquip(equip string) string {
 
 // Read asynchronously reads pages from the board and passes them to the
 // scrape-evaluator.
-func (t *trulosBoard) Read(ch chan<- scraper.Scrape) {
-	post := make(chan scraper.Scrape)
-	go ProcessScrapes(post)
+func (t *trulosBoard) Read(pages chan<- scraper.Page) {
 	for _, state := range t.states {
 		if state.name != "TX" {
-			continue  // Test multi-page results!!!
+			continue // Test multi-page results!!!
 		}
 		for _, equip := range equipmentTypes {
 			log.Println("Reading Trulos state", state.name, equip)
 			query := state.queryForEquip(equip)
-			body, err := ReadUrl(t.host, baseUri, query)
+			body, err := GetUrl(t.host, baseUri, query)
 			if err != nil {
 				log.Print("Problem reading Trulos", query)
 			}
-			fmt.Println("Raw HTML is\n", string(body))
-			actions := state.board.pageRe.FindAll(
-				body, -1)
-			log.Println("Found actions:", actions)
-			ch <- &trulosScrape{ state, equip, body, 
-				actions, nil, post }
+			actions := state.board.pageRe.FindAllString(
+				string(body), -1)
+			for i := 0; i < len(actions); i++ {
+				actions[i] = html.UnescapeString(actions[i])
+			}
+			pages <- &trulosScrape{state, equip, 
+				RepairCDATA(body), actions}
 			// !!! Just one for now
 			return
 		}
 	}
 }
 
-func ProcessScrapes(post <-chan scraper.Scrape) {
-	for scrape := range post {
-		scrape.(*trulosScrape).Process()
+func (t *trulosBoard) ProcessScrapes() {
+	for scrape := range t.procCh {
+		scrape.P.(*trulosScrape).Process(scrape)
 	}
 }
 
@@ -133,21 +136,18 @@ func (s *trulosScrape) Body() []byte {
 	return s.body
 }
 
-func (s *trulosScrape) Actions() [][]byte {
+func (s *trulosScrape) Actions() []string {
 	return s.actions
 }
 
-func (s *trulosScrape) Scraped(xml []byte, err error) {
-	if err != nil {
-		log.Print("Scrape error: ", s.state, ": ", s.equip)
-	} else {
-		s.xml = xml
-		s.post <- s
-	}
+func (s *trulosScrape) Channel() chan<- *scraper.Result {
+	return s.state.board.procCh
 }
 
-func (s *trulosScrape) Process() {
-	doc, err := html.Parse(bytes.NewReader(s.xml))
+func (s *trulosScrape) Process(r *scraper.Result) {
+	log.Print("Scrape result for [", string(r.Action), "]: ", s, " ",
+		len(r.Data), " bytes")
+	doc, err := html.Parse(bytes.NewReader(r.Data))
 	if err != nil {
 		log.Print("Scrape parse error", s.state.name, s.equip, err)
 		return
@@ -173,21 +173,23 @@ func (s *trulosScrape) TraverseContentTable(n *html.Node, depth int) {
 		s.ProcessRowData(row)
 	} else {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			s.TraverseContentTable(c, depth + 1)
+			s.TraverseContentTable(c, depth+1)
 		}
 	}
 }
 
-func (s *trulosScrape) TraverseContentRow(n *html.Node, depth int, 
+func (s *trulosScrape) TraverseContentRow(n *html.Node, depth int,
 	data []string) []string {
 	// Level 3 is TD
 	// Level 4 is FONT
 	// Level 5 and higher are target data
+	// TODO(jmacd): This is picking up the header row and the
+	// row of next-page links at the bottom.
 	if depth > 3 && n.Type == html.TextNode {
 		data = append(data, n.Data)
 	} else {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			data = s.TraverseContentRow(c, depth + 1, data)
+			data = s.TraverseContentRow(c, depth+1, data)
 		}
 	}
 	return data
@@ -222,7 +224,7 @@ func (s *trulosScrape) ProcessRowData(row []string) {
 	dateYear, _ := strconv.Atoi(dateSplit[2])
 	dateMonth, _ := strconv.Atoi(dateSplit[0])
 	dateDay, _ := strconv.Atoi(dateSplit[1])
-	date := time.Date(dateYear, time.Month(dateMonth), 
+	date := time.Date(dateYear, time.Month(dateMonth),
 		dateDay, 12, 0, 0, 0, time.Local)
 	origin := trimmed[1]
 	if trimmed[2] != s.state.name {
@@ -238,12 +240,12 @@ func (s *trulosScrape) ProcessRowData(row []string) {
 	weight, _ := strconv.Atoi(trimmed[9])
 	stops, _ := strconv.Atoi(trimmed[10])
 	if weight < 100 {
-		weight *= 1000  // Assume * thousand pounds
+		weight *= 1000 // Assume * thousand pounds
 	}
-	load := &Load{date, origin, s.state.name, trimmed[3], trimmed[4], 
+	load := &Load{date, origin, s.state.name, trimmed[3], trimmed[4],
 		trimmed[5], llen, weight, s.equip, price, stops, trimmed[12]}
-		
-	fmt.Println("Got a load", load)
+	_ = load
+	//fmt.Println("Got a load", load)
 }
 
 func (t *trulosBoard) String() string {
