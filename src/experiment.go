@@ -1,58 +1,93 @@
 package main
 
+import "io/ioutil"
 import "log"
 import "net/http"
-import "io/ioutil"
-
-//import "net/http/httputil"
+import "net/http/httputil"
+import "net/url"
+import "regexp"
 import "sync"
+import "time"
 
 import "boards"
 import "scraper"
 
 const (
-	scrapeHeader = "Scraper-Token"
-	actionHeader = "Scraper-Action"
+	scrapeToken    = "Scraper-Token"
+	scrapeAction    = "Scraper-Action"
+	scrapeJsFile    = "scraper/scraper.js"
+	validPathRegexp = `^/(Trulos|Truck).*`
 )
 
 type scrapeState struct {
 	page scraper.Page
-
-	// Index of the current page.Action() (-1 for the initial action)
-	aid int
+	aid  int // Index of the current page.Action() or -1
 }
 
-var smutex sync.Mutex
-var smap map[string]*scrapeState = make(map[string]*scrapeState)
+var (
+	reverseProxy *httputil.ReverseProxy
+	validPathRe  *regexp.Regexp
+	scrapeScript []byte
+	smutex       sync.Mutex
+	smap         map[string]*scrapeState = make(map[string]*scrapeState)
+)
 
-// start is the initial URI contacted by the headless browser.
-func start(w http.ResponseWriter, r *http.Request) {
-	contents, err := ioutil.ReadFile("scraper/scraper.js")
+func init() {
+	contents, err := ioutil.ReadFile(scrapeJsFile)
 	if err != nil {
-		http.Error(w, "Can't read js", 404)
+		log.Print("Can't read " + scrapeJsFile)
 	}
-	w.Write([]byte("<html><script type=\"text/javascript\">\n"))
-	w.Write(contents)
-	w.Write([]byte("</script></html>\n"))
-	log.Print("Starting a scraper...")
+	scrapeScript = append(scrapeScript, []byte("<script type=\"text/javascript\">\n")...)
+	scrapeScript = append(scrapeScript, contents...)
+	scrapeScript = append(scrapeScript, []byte("</script>\n")...)
+
+	reverseProxy = &httputil.ReverseProxy{
+		proxyFunction,
+		&http.Transport{
+			Proxy:              removeForwardedForProxy,
+			DisableCompression: true},
+		time.Duration(0)}
+
+	validPathRe = regexp.MustCompile(validPathRegexp)
 }
 
-func test(w http.ResponseWriter, r *http.Request) {
-	contents, err := ioutil.ReadFile("boards/trulos.html")
-	if err != nil {
-		http.Error(w, "Can't read HTML", 404)
-	}
-	w.Write(contents)
+func removeForwardedForProxy(r *http.Request) (*url.URL, error) {
+	// Let's remove Referer (this is added after the ReverseProxy's Proxy
+	// function is called).
+	r.Header.Del("X-Forwarded-For")
+	return http.ProxyFromEnvironment(r)
 }
 
-// scrape is the URI used to retrieve another document to evaluate.
+func proxyFunction(r *http.Request) {
+	// The default handler rejects non-valid requests, assume all
+	// others go to the site itself.
+	r.URL.Scheme = "http"
+	r.URL.Host = "www.trulos.com"
+	r.Host = "www.trulos.com"
+	// Remove Referer, If-Modified-Since.
+	r.Header.Del("Referer")
+	r.Header.Del("If-Modified-Since")
+	if r.Method == "POST" {
+		r.Header.Del("Origin")
+		r.Header.Add("Origin", "http://www.trulos.com")
+
+		// Note: The form action="" field specifies an unqualified
+		// path, which produces the scraper's path-directory,
+		// incorrectly.
+		r.URL.Path = "/Trulos/Post-Truck-Loads/Truck-Load-Board.aspx"
+	}
+}
+
+// Request is the URI used to attach a scraper.
 func scrape(w http.ResponseWriter, r *http.Request,
 	pages <-chan scraper.Page) {
 	page := <-pages
 	id := page.Id()
 	log.Println("Handing work to a scraper", page)
-	w.Header().Add(scrapeHeader, id)
+	w.Header().Add(scrapeToken, id)
 	w.Write(page.Body())
+	w.Write(scrapeScript)
+	w.Write([]byte("<script type=\"text/javascript\">respond('" + id + "')</script>"))
 	smutex.Lock()
 	smap[id] = &scrapeState{page, -1}
 	smutex.Unlock()
@@ -67,13 +102,17 @@ func scrapeHandler(pages <-chan scraper.Page) func(http.ResponseWriter, *http.Re
 }
 
 func handle(w http.ResponseWriter, r *http.Request) {
+	if validPathRe.FindString(r.URL.Path) == "" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
 	//dump, _ := httputil.DumpRequest(r, true)
-	log.Println("Default handler:", r.Method, r.URL)
-	w.WriteHeader(http.StatusNotFound)
+	log.Println("Handling:", r.Method, r.URL)
+	reverseProxy.ServeHTTP(w, r)
 }
 
 func response(w http.ResponseWriter, r *http.Request) {
-	id := r.Header.Get(scrapeHeader)
+	id := r.Header.Get(scrapeToken)
 	log.Println("Scraper finished work", id)
 	smutex.Lock()
 	state, present := smap[id]
@@ -95,7 +134,7 @@ func response(w http.ResponseWriter, r *http.Request) {
 	if state.aid < len(actions) {
 		next := string(actions[state.aid])
 		log.Println("Sending next action", next)
-		w.Header().Add(actionHeader, next)
+		w.Header().Add(scrapeAction, next)
 	} else {
 		smutex.Lock()
 		delete(smap, id)
@@ -121,8 +160,7 @@ func main() {
 	if err := loadBoard(ch); err != nil {
 		log.Fatal("Couldn't initialize load board: ", err)
 	}
-	http.HandleFunc("/test", test)
-	http.HandleFunc("/start", start)
+
 	http.HandleFunc("/scrape", scrapeHandler(ch))
 	http.HandleFunc("/response", response)
 	http.HandleFunc("/", handle)

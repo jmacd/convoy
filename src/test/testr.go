@@ -16,11 +16,7 @@ func main() {
 		log.Print("Can't read file")
 		return
 	}
-	re, err := regexp.Compile(pageRegexp)
-	if err != nil {
-		log.Print("Can't compile regexp")
-		return
-	}
+	re := regexp.MustCompile(pageRegexp)
 	matches := re.FindAll(contents, -1)
 	for _, m := range matches {
 		log.Print("Match: ", string(m))

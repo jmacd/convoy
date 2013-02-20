@@ -61,20 +61,10 @@ type trulosScrape struct {
 }
 
 func NewTrulos() (LoadBoard, error) {
-	stateRe, err := regexp.Compile(
-		regexp.QuoteMeta(baseUri+"?STATE=") + "(\\w+)")
-	if err != nil {
-		log.Print("Invalid Trulos State regexp")
-		return nil, err
-	}
-	pageRe, err := regexp.Compile(pageRegexp)
-	if err != nil {
-		log.Print("Invalid Trulos Page regexp")
-		return nil, err
-	}
+	stateRe := regexp.MustCompile(regexp.QuoteMeta(baseUri+"?STATE=") + "(\\w+)")
+	pageRe := regexp.MustCompile(pageRegexp)
 	procCh := make(chan *scraper.Result)
-	board := &trulosBoard{"www.trulos.com", stateRe,
-		pageRe, procCh, nil}
+	board := &trulosBoard{"www.trulos.com", stateRe, pageRe, procCh, nil}
 	go board.ProcessScrapes()
 	return board, nil
 }
@@ -109,13 +99,13 @@ func (t *trulosBoard) Read(pages chan<- scraper.Page) {
 			if err != nil {
 				log.Print("Problem reading Trulos", query)
 			}
+			//log.Print("Got body...", string(body))
 			actions := state.board.pageRe.FindAllString(
 				string(body), -1)
 			for i := 0; i < len(actions); i++ {
 				actions[i] = html.UnescapeString(actions[i])
 			}
-			pages <- &trulosScrape{state, equip, 
-				RepairCDATA(body), actions}
+			pages <- &trulosScrape{state, equip, HijackExternalRefs(body), actions}
 			// !!! Just one for now
 			return
 		}
@@ -245,7 +235,7 @@ func (s *trulosScrape) ProcessRowData(row []string) {
 	load := &Load{date, origin, s.state.name, trimmed[3], trimmed[4],
 		trimmed[5], llen, weight, s.equip, price, stops, trimmed[12]}
 	_ = load
-	//fmt.Println("Got a load", load)
+	fmt.Println("Load", load)
 }
 
 func (t *trulosBoard) String() string {

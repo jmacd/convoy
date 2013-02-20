@@ -4,22 +4,16 @@ import "log"
 import "io/ioutil"
 import "net/http"
 import "regexp"
-//import "code.google.com/p/go.net/html"
 
 const (
 	// TODO(jmacd): Take this from the scraper
-	userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.57 Safari/537.17"
-
-	// TODO(jmacd): This is totally specific to the Trulos problem
-	// see note below.
-	cdataStart = `//<!\[CDATA\[`
-	cdataEnd = `//\]\]>`
+	userAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) " +
+		"AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.57 Safari/537.17"
 )
 
 var (
-	client *http.Client
-	cdataStartRe *regexp.Regexp
-	cdataEndRe *regexp.Regexp
+	client      *http.Client
+	httpColonRe *regexp.Regexp
 )
 
 func init() {
@@ -34,13 +28,7 @@ func init() {
 			DisableCompression: true},
 	}
 
-	var err1, err2 error
-	cdataStartRe, err1 = regexp.Compile(cdataStart)
-	cdataEndRe, err2 = regexp.Compile(cdataEnd)
-
-	if err1 != nil || err2 != nil {
-		log.Println("Regexp error: ", err1, err2)
-	}
+	httpColonRe = regexp.MustCompile("https?:/")
 }
 
 func GetUrl(host, uri, query string) ([]byte, error) {
@@ -63,28 +51,6 @@ func GetUrl(host, uri, query string) ([]byte, error) {
 	return body, nil
 }
 
-// CDATA sections are converted to comments when setting the innerHTML
-// property of a DOM element (at least in Chrome / Firefox).  As a
-// workaround, fix it with proper escaping -- but need to assume that
-// this only happens inside <script type="text/javascript"> elements.
-// stackoverflow.com/questions/7065615/innerhtml-converts-cdata-to-comments
-func RepairCDATA(data []byte) (res []byte) {
-	for len(data) > 0 {
-		start := cdataStartRe.FindIndex(data)
-		if start == nil {
-			res = append(res, data...)
-			return
-		}
-		res = append(res, data[0:start[0]]...)
-		data = data[start[1]:]
-		end := cdataEndRe.FindIndex(data)
-		if end == nil {
-			// Unbalanced case, whatever...
-			res = append(res, data...)
-			return
-		}
-		res = append(res, data[0:end[0]]...)
-		data = data[end[1]:]
-	}
-	return
+func HijackExternalRefs(data []byte) []byte {
+	return httpColonRe.ReplaceAll(data, []byte{})
 }
