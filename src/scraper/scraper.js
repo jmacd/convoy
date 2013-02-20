@@ -3,8 +3,7 @@ var scrapeAction = "Scraper-Action"
 var responseUri = "/response"
 
 function respond(token) {
-    // The following only works once.  Not sure how to update it after
-    // the initial rendering, yet...
+    console.log("Responding for " + token)
     var xml = new XMLSerializer().serializeToString(document)
     var xhr = new XMLHttpRequest();
     xhr.open("POST", responseUri, true);
@@ -21,7 +20,12 @@ function respond(token) {
 		    newScript.type = 'text/javascript';
 		    newScript.innerHTML = action
 		    document.body.appendChild(newScript)
-		    respond(token)
+		    // TODO(jmacd): GROSS.  This works, but isn't
+		    // reliable.  Seems the right solution is to
+		    // insert the call to respond() in the POST
+		    // response.  Yeah.
+		    console.log("Sleeping 2 seconds")
+		    setTimeout(function () { respond(token) }, 2000)
 		}
             } else { 
 		console.log("Status is " + xhr.status + " for " + token); 
