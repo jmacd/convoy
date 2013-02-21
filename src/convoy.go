@@ -24,6 +24,10 @@ type scrapeState struct {
 	aid  int // Index of the current page.Action() or -1
 }
 
+type proxyTransport struct {
+	transport *http.Transport
+}
+
 var (
 	reverseProxy *httputil.ReverseProxy
 	validPathRe  *regexp.Regexp
@@ -42,23 +46,30 @@ func init() {
 	scrapeScript = append(scrapeScript, []byte("</script>\n")...)
 
 	reverseProxy = &httputil.ReverseProxy{
-		proxyFunction,
-		&http.Transport{
-			Proxy:              removeForwardedForProxy,
-			DisableCompression: true},
+		proxyRequest,
+		&proxyTransport{&http.Transport{
+				Proxy:              proxyUrl,
+				DisableCompression: true},
+		},
 		time.Duration(0)}
 
 	validPathRe = regexp.MustCompile(validPathRegexp)
 }
 
-func removeForwardedForProxy(r *http.Request) (*url.URL, error) {
-	// Let's remove Referer (this is added after the ReverseProxy's Proxy
-	// function is called).
+func (p *proxyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := p.transport.RoundTrip(r)
+	//dump, _ := httputil.DumpResponse(resp, true)
+	//log.Println("Handling response:", r.Method, r.URL, len(dump), "bytes")
+	return resp, err
+}
+
+func proxyUrl(r *http.Request) (*url.URL, error) {
+	// Remove Referer b/c is added after proxyRequest():
 	r.Header.Del("X-Forwarded-For")
 	return http.ProxyFromEnvironment(r)
 }
 
-func proxyFunction(r *http.Request) {
+func proxyRequest(r *http.Request) {
 	// The default handler rejects non-valid requests, assume all
 	// others go to the site itself.
 	r.URL.Scheme = "http"
@@ -83,11 +94,21 @@ func scrape(w http.ResponseWriter, r *http.Request,
 	pages <-chan scraper.Page) {
 	page := <-pages
 	id := page.Id()
-	log.Println("Handing work to a scraper", page)
+	//log.Println("Handing work to a scraper", page)
 	w.Header().Add(scrapeToken, id)
 	w.Write(page.Body())
 	w.Write(scrapeScript)
-	w.Write([]byte("<script type=\"text/javascript\">respond('" + id + "')</script>"))
+
+	// The initial response callback.
+	w.Write([]byte("<script type=\"text/javascript\">respond('" + 
+		id + "')</script>"))
+
+	// The __doPostBack response callback.
+	// http://stackoverflow.com/questions/6504472/how-to-wait-on-the-dopostback-method-to-complete-in-javascript
+	w.Write([]byte("<script type=\"text/javascript\">" +
+		"Sys.WebForms.PageRequestManager.getInstance()." +
+		"add_endRequest(function() { respond('" + id + "') })" + 
+		"</script>"))
 	smutex.Lock()
 	smap[id] = &scrapeState{page, -1}
 	smutex.Unlock()
@@ -107,13 +128,13 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	//dump, _ := httputil.DumpRequest(r, true)
-	log.Println("Handling:", r.Method, r.URL)
+	//log.Println("Handling request:", r.Method, r.URL, len(dump), "bytes")
 	reverseProxy.ServeHTTP(w, r)
 }
 
 func response(w http.ResponseWriter, r *http.Request) {
 	id := r.Header.Get(scrapeToken)
-	log.Println("Scraper finished work", id)
+	//log.Println("Scraper finished work", id)
 	smutex.Lock()
 	state, present := smap[id]
 	smutex.Unlock()
@@ -133,7 +154,7 @@ func response(w http.ResponseWriter, r *http.Request) {
 	state.aid++
 	if state.aid < len(actions) {
 		next := string(actions[state.aid])
-		log.Println("Sending next action", next)
+		//log.Println("Sending next action", next)
 		w.Header().Add(scrapeAction, next)
 	} else {
 		smutex.Lock()

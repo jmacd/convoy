@@ -1,6 +1,6 @@
 package boards
 
-import "log"
+//import "log"
 import "io/ioutil"
 import "net/http"
 import "regexp"
@@ -38,7 +38,7 @@ func GetUrl(host, uri, query string) ([]byte, error) {
 		return nil, err
 	}
 	req.Header.Add("User-Agent", userAgent)
-	log.Println("Trying", url)
+	//log.Println("Trying", url)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

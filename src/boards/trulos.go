@@ -19,11 +19,11 @@ import "scraper"
 // and/or irregular equipment types, it seems.  "Reefer with Pallet
 // exchange", "Flatbed with Sides", "Van Hazmat", ...
 var equipmentTypes = []string{
-	// "Double Drop",
+	"Double Drop",
 	// "Flatbed / Step Deck",
 	// "Flatbed with Tarps",
 	// "Flatbed",
-	// "Power Only",
+	"Power Only",
 	// "Reefer",
 	// "Step Deck Removeable Gooseneck",
 	// "Step Deck",
@@ -34,9 +34,10 @@ var equipmentTypes = []string{
 const (
 	baseUri       = "/Trulos/Post-Truck-Loads/Truck-Load-Board.aspx"
 	contentId     = "ContentPlaceHolder1_GridView1"
-	escapedRegexp = `[a-zA-Z0-9$&#;,]`
+	// Regexp for finding actions in HTML-escaped javascript
+	escapedRegexp = `[a-zA-Z0-9$&#;,]+`
 	pageRegexp    = `__doPostBack\(` + escapedRegexp +
-		`+Page` + escapedRegexp + `+\)`
+		`Page` + escapedRegexp + `\)`
 )
 
 type trulosBoard struct {
@@ -90,10 +91,11 @@ func (s *trulosState) queryForEquip(equip string) string {
 func (t *trulosBoard) Read(pages chan<- scraper.Page) {
 	for _, state := range t.states {
 		if state.name != "TX" {
-			continue // Test multi-page results!!!
+			// TODO(jmacd) Just one for now.
+			continue
 		}
 		for _, equip := range equipmentTypes {
-			log.Println("Reading Trulos state", state.name, equip)
+			//log.Println("Reading Trulos state", state.name, equip)
 			query := state.queryForEquip(equip)
 			body, err := GetUrl(t.host, baseUri, query)
 			if err != nil {
@@ -106,8 +108,6 @@ func (t *trulosBoard) Read(pages chan<- scraper.Page) {
 				actions[i] = html.UnescapeString(actions[i])
 			}
 			pages <- &trulosScrape{state, equip, HijackExternalRefs(body), actions}
-			// !!! Just one for now
-			return
 		}
 	}
 }
@@ -135,8 +135,8 @@ func (s *trulosScrape) Channel() chan<- *scraper.Result {
 }
 
 func (s *trulosScrape) Process(r *scraper.Result) {
-	log.Print("Scrape result for [", string(r.Action), "]: ", s, " ",
-		len(r.Data), " bytes")
+	//log.Print("Scrape result for [", string(r.Action), "]: ", s, " ",
+	//	len(r.Data), " bytes")
 	doc, err := html.Parse(bytes.NewReader(r.Data))
 	if err != nil {
 		log.Print("Scrape parse error", s.state.name, s.equip, err)
@@ -223,7 +223,8 @@ func (s *trulosScrape) ProcessRowData(row []string) {
 	}
 	llen, _ := strconv.Atoi(trimmed[6])
 	if trimmed[7] != s.equip {
-		log.Println("Unexpected equipment type:", trimmed[7], s, trimmed)
+		log.Println("Unexpected equipment type:", 
+			trimmed[7], s, trimmed)
 		return
 	}
 	price, _ := strconv.ParseFloat(trimmed[8], 64)

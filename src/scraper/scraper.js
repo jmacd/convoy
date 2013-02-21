@@ -3,7 +3,7 @@ var scrapeAction = "Scraper-Action"
 var responseUri = "/response"
 
 function respond(token) {
-    console.log("Responding for " + token)
+    //console.log("Responding for " + token)
     var xml = new XMLSerializer().serializeToString(document)
     var xhr = new XMLHttpRequest();
     xhr.open("POST", responseUri, true);
@@ -12,20 +12,14 @@ function respond(token) {
 	if (xhr.readyState == 4) { 
             if (xhr.status == 200) { 
 		var action = xhr.getResponseHeader(scrapeAction)
-		console.log("Finished for " + token + " next " + action)
+		//console.log("Finished for " + token + " next " + action)
 		if (action == null) {
-		    //connect();  // Repeat!
+		    location.reload()
 		} else {
 		    var newScript = document.createElement('script');
 		    newScript.type = 'text/javascript';
 		    newScript.innerHTML = action
 		    document.body.appendChild(newScript)
-		    // TODO(jmacd): GROSS.  This works, but isn't
-		    // reliable.  Seems the right solution is to
-		    // insert the call to respond() in the POST
-		    // response.  Yeah.
-		    console.log("Sleeping 2 seconds")
-		    setTimeout(function () { respond(token) }, 2000)
 		}
             } else { 
 		console.log("Status is " + xhr.status + " for " + token); 
