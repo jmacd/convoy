@@ -15,22 +15,6 @@ import "code.google.com/p/go.net/html/atom"
 
 import "scraper"
 
-// TODO(jmacd): This list is not right; they sometimes list multiple
-// and/or irregular equipment types, it seems.  "Reefer with Pallet
-// exchange", "Flatbed with Sides", "Van Hazmat", ...
-var equipmentTypes = []string{
-	"Double Drop",
-	// "Flatbed / Step Deck",
-	// "Flatbed with Tarps",
-	// "Flatbed",
-	"Power Only",
-	// "Reefer",
-	// "Step Deck Removeable Gooseneck",
-	// "Step Deck",
-	// "Van / Reefer",
-	"Van",
-}
-
 const (
 	baseUri       = "/Trulos/Post-Truck-Loads/Truck-Load-Board.aspx"
 	contentId     = "ContentPlaceHolder1_GridView1"
@@ -43,6 +27,7 @@ const (
 type trulosBoard struct {
 	host    string
 	stateRe *regexp.Regexp
+	equipRe *regexp.Regexp
 	pageRe  *regexp.Regexp
 	procCh  chan *scraper.Result
 	states  []*trulosState
@@ -52,6 +37,7 @@ type trulosState struct {
 	board *trulosBoard
 	name  string
 	uri   string
+	equipmentTypes []string
 }
 
 type trulosScrape struct {
@@ -62,10 +48,11 @@ type trulosScrape struct {
 }
 
 func NewTrulos() (LoadBoard, error) {
-	stateRe := regexp.MustCompile(regexp.QuoteMeta(baseUri+"?STATE=") + "(\\w+)")
+	stateRe := regexp.MustCompile(regexp.QuoteMeta(baseUri+"?STATE=") + `(\w+)`)
+	equipRe := regexp.MustCompile(`\?STATE=(?:\w+)&amp;Equipment=([ /\w]+)`)
 	pageRe := regexp.MustCompile(pageRegexp)
 	procCh := make(chan *scraper.Result)
-	board := &trulosBoard{"www.trulos.com", stateRe, pageRe, procCh, nil}
+	board := &trulosBoard{"www.trulos.com", stateRe, equipRe, pageRe, procCh, nil}
 	go board.ProcessScrapes()
 	return board, nil
 }
@@ -77,9 +64,22 @@ func (t *trulosBoard) Init() error {
 	}
 	links := t.stateRe.FindAllStringSubmatch(string(body), -1)
 	for _, si := range links {
-		t.states = append(t.states, &trulosState{t, si[1], si[0]})
+		t.states = append(t.states, &trulosState{t, si[1], si[0], nil})
 	}
 	return nil
+}
+
+func (s *trulosState) getEquipmentTypes() {
+	body, err := GetUrl(s.board.host, s.uri, "")
+	if err != nil {
+		log.Print("No equipment types found", s)
+		return
+	}
+	links := s.board.equipRe.FindAllStringSubmatch(string(body), -1)
+	for _, si := range links {
+		s.equipmentTypes = append(s.equipmentTypes, si[1])
+	}
+	log.Print("equipment types", s.equipmentTypes)
 }
 
 func (s *trulosState) queryForEquip(equip string) string {
@@ -90,16 +90,18 @@ func (s *trulosState) queryForEquip(equip string) string {
 // scrape-evaluator.
 func (t *trulosBoard) Read(pages chan<- scraper.Page) {
 	for _, state := range t.states {
-		if state.name != "TX" {
+		if state.name != "VT" {
 			// TODO(jmacd) Just one for now.
 			continue
 		}
-		for _, equip := range equipmentTypes {
+		state.getEquipmentTypes()
+		for _, equip := range state.equipmentTypes {
 			//log.Println("Reading Trulos state", state.name, equip)
 			query := state.queryForEquip(equip)
 			body, err := GetUrl(t.host, baseUri, query)
 			if err != nil {
 				log.Print("Problem reading Trulos", query)
+				continue
 			}
 			//log.Print("Got body...", string(body))
 			actions := state.board.pageRe.FindAllString(
@@ -173,8 +175,9 @@ func (s *trulosScrape) TraverseContentRow(n *html.Node, depth int,
 	// Level 3 is TD
 	// Level 4 is FONT
 	// Level 5 and higher are target data
-	// TODO(jmacd): This is picking up the header row and the
-	// row of next-page links at the bottom.
+	if depth == 3 && n.DataAtom == atom.Th {
+		return data
+	}
 	if depth > 3 && n.Type == html.TextNode {
 		data = append(data, n.Data)
 	} else {
@@ -204,6 +207,10 @@ func (s *trulosScrape) ProcessRowData(row []string) {
 			continue
 		}
 		trimmed = append(trimmed, str)
+	}
+	// We'll index up to trimmed[12], but there should be 14 cols.
+	if len(row) < 13 {
+		return
 	}
 	dateStr := trimmed[0]
 	dateSplit := strings.Split(dateStr, "/")
