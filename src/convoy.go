@@ -1,5 +1,6 @@
 package main
 
+import "database/sql"
 import "io/ioutil"
 import "log"
 import "net/http"
@@ -8,6 +9,7 @@ import "net/url"
 import "regexp"
 import "sync"
 import "time"
+import _ "github.com/Go-SQL-Driver/MySQL"
 
 import "boards"
 import "scraper"
@@ -24,8 +26,12 @@ type scrapeState struct {
 	aid  int // Index of the current page.Action() or -1
 }
 
+// type cachedContent struct {
+// }
+
 type proxyTransport struct {
 	transport *http.Transport
+//	scriptCache map[string]*cachedContent
 }
 
 var (
@@ -129,6 +135,7 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 	//dump, _ := httputil.DumpRequest(r, true)
 	//log.Println("Handling request:", r.Method, r.URL, len(dump), "bytes")
+	boards.SleepAWhile(r.URL.Path, r.URL.RawQuery)
 	reverseProxy.ServeHTTP(w, r)
 }
 
@@ -164,25 +171,82 @@ func response(w http.ResponseWriter, r *http.Request) {
 }
 
 // loadBoard produces items for scraping on the channel.
-func loadBoard(ch chan<- scraper.Page) error {
-	tt, err := boards.NewTrulos()
+func loadBoard(pageCh chan<- scraper.Page, loadCh chan<- *boards.Load) error {
+	tt, err := boards.NewTrulos(loadCh)
 	if err != nil {
 		return err
 	}
 	if err := tt.Init(); err != nil {
 		return err
 	}
-	go tt.Read(ch)
+	go tt.Read(pageCh)
 	return nil
 }
 
+// openDb opens and tests the database connection.
+func openDb() (*sql.DB, error) {
+	conn, err := sql.Open("mysql", 
+		"test:@/Convoy?charset=utf8")
+	if err != nil {
+		return conn, err
+	}
+	// Test that the connection is good; because the driver call
+	// to open the database is defered until the first request.
+	_, err = conn.Exec("SELECT 1;")
+	if err != nil {
+		log.Fatal("Database not opened!", err)
+	}
+	return conn, err
+}
+
+func saveLoad(stmt *sql.Stmt, load *boards.Load) error {
+	_, err := stmt.Exec(
+		load.PickupDate,
+		load.OriginState,
+		load.OriginCity,
+		load.DestState,
+		load.DestCity,
+		load.LoadType,
+		load.Length,
+		load.Weight,
+		load.Equipment,
+		load.Price,
+		load.Stops,
+		load.Phone)
+	return err
+}
+
+func processLoads(conn *sql.DB, loadCh <-chan *boards.Load) {
+	stmt, err := conn.Prepare(
+		"INSERT INTO Convoy.TruckLoads " +
+		"(PickupDate, OriginState, OriginCity, " +
+		"DestState, DestCity, LoadType, Length, " +
+		"Weight, Equipment, Price, Stops, Phone) " +
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		log.Fatal("Could not prepare INSERT statement")
+	}
+	for load := range loadCh {
+		if err := saveLoad(stmt, load); err != nil {
+			log.Print("Could not save load: ", err)
+		}
+	}
+}
+
 func main() {
-	ch := make(chan scraper.Page)
-	if err := loadBoard(ch); err != nil {
+	conn, err := openDb()
+	if err != nil {
+		log.Fatal("Couldn't connect to database: ", err)
+	}
+	defer conn.Close()
+	ch1 := make(chan scraper.Page)
+	ch2 := make(chan *boards.Load)
+	if err := loadBoard(ch1, ch2); err != nil {
 		log.Fatal("Couldn't initialize load board: ", err)
 	}
+	go processLoads(conn, ch2)
 
-	http.HandleFunc("/scrape", scrapeHandler(ch))
+	http.HandleFunc("/scrape", scrapeHandler(ch1))
 	http.HandleFunc("/response", response)
 	http.HandleFunc("/", handle)
 

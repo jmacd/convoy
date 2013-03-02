@@ -1,0 +1,18 @@
+CREATE DATABASE IF NOT EXISTS Convoy;
+
+USE Convoy;
+
+CREATE TABLE TruckLoads (
+       PickupDate	DATE,
+       OriginState	CHAR(2),
+       OriginCity	VARCHAR(32),
+       DestState	CHAR(2),
+       DestCity		VARCHAR(32),
+       LoadType		VARCHAR(16),
+       Length		INTEGER,
+       Weight		INTEGER,
+       Equipment	VARCHAR(32),
+       Price		FLOAT,
+       Stops		INTEGER,
+       Phone		VARCHAR(16)
+);

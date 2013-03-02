@@ -1,9 +1,10 @@
 package boards
 
-//import "log"
+import "log"
 import "io/ioutil"
 import "net/http"
 import "regexp"
+import "time"
 
 const (
 	// TODO(jmacd): Take this from the scraper
@@ -31,7 +32,13 @@ func init() {
 	httpColonRe = regexp.MustCompile("https?:/")
 }
 
+func SleepAWhile(url, query string) {
+	log.Print("Sleeping for ", url, " ", query)
+	time.Sleep(time.Second/* * 10*/)
+}
+
 func GetUrl(host, uri, query string) ([]byte, error) {
+	SleepAWhile(uri, query)
 	url := "http://" + host + uri + query
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

@@ -12,12 +12,12 @@ type LoadBoard interface {
 }
 
 type Load struct {
-	Date        time.Time
+	PickupDate  time.Time
 	OriginCity  string
 	OriginState string
 	DestCity    string
 	DestState   string
-	Load        string
+	LoadType    string   // "Full" or "Partial" or ?
 	Length      int
 	Weight      int
 	Equipment   string
