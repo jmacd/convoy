@@ -16,7 +16,7 @@ type Page interface {
 // for the initial page load, subsequently contains the value of
 // any Actions() returned by the Page.
 type Result struct {
-	P      Page
+	//P      Page
 	Action string
 	Data   []byte
 	Err    error

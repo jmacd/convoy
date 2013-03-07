@@ -2,11 +2,14 @@ package main
 
 import "database/sql"
 import "io/ioutil"
+import "bytes"
+import "fmt"
 import "log"
 import "net/http"
 import "net/http/httputil"
 import "net/url"
 import "regexp"
+import "strings"
 import "sync"
 import "time"
 import _ "github.com/Go-SQL-Driver/MySQL"
@@ -15,7 +18,7 @@ import "boards"
 import "scraper"
 
 const (
-	scrapeToken    = "Scraper-Token"
+	scrapeToken     = "Scraper-Token"
 	scrapeAction    = "Scraper-Action"
 	scrapeJsFile    = "scraper/scraper.js"
 	validPathRegexp = `^/(Trulos|Truck).*`
@@ -26,12 +29,14 @@ type scrapeState struct {
 	aid  int // Index of the current page.Action() or -1
 }
 
-// type cachedContent struct {
-// }
+type cachedContent struct {
+	resp http.Response
+	body []byte
+}
 
 type proxyTransport struct {
-	transport *http.Transport
-//	scriptCache map[string]*cachedContent
+	transport   *http.Transport
+	scriptCache map[string]*cachedContent
 }
 
 var (
@@ -54,8 +59,9 @@ func init() {
 	reverseProxy = &httputil.ReverseProxy{
 		proxyRequest,
 		&proxyTransport{&http.Transport{
-				Proxy:              proxyUrl,
-				DisableCompression: true},
+			Proxy:              proxyUrl,
+			DisableCompression: true},
+			make(map[string]*cachedContent),
 		},
 		time.Duration(0)}
 
@@ -63,7 +69,41 @@ func init() {
 }
 
 func (p *proxyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	var cacheKey string
+	if strings.HasSuffix(r.URL.Path, ".axd") {
+		cacheKey = fmt.Sprint(r.Method, r.URL)
+		if cached, has := p.scriptCache[cacheKey]; has {
+			resp := new(http.Response)
+			*resp = cached.resp
+			resp.Body = ioutil.NopCloser(
+				bytes.NewReader(cached.body))
+			//log.Println("Cache hit!", cacheKey)
+			return resp, nil
+		}
+	}
+
 	resp, err := p.transport.RoundTrip(r)
+	if err != nil {
+		return resp, err
+	}
+
+	if len(cacheKey) != 0 {
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return resp, err
+		}
+		cc := new(cachedContent)
+		cc.body = body
+		cc.resp = *resp
+		cc.resp.Body = nil
+		resp.Body = ioutil.NopCloser(bytes.NewReader(cc.body))
+		p.scriptCache[cacheKey] = cc
+		//log.Print("Did not sleep for cacheable content: ",
+		//	r.URL.Path, r.URL.RawQuery)
+	} else {
+		boards.SleepAWhile(r.URL.Path, r.URL.RawQuery)
+	}
+
 	//dump, _ := httputil.DumpResponse(resp, true)
 	//log.Println("Handling response:", r.Method, r.URL, len(dump), "bytes")
 	return resp, err
@@ -84,6 +124,8 @@ func proxyRequest(r *http.Request) {
 	// Remove Referer, If-Modified-Since.
 	r.Header.Del("Referer")
 	r.Header.Del("If-Modified-Since")
+	r.Header.Del("User-Agent")
+	r.Header.Set("User-Agent", boards.UserAgent)
 	if r.Method == "POST" {
 		r.Header.Del("Origin")
 		r.Header.Add("Origin", "http://www.trulos.com")
@@ -106,14 +148,14 @@ func scrape(w http.ResponseWriter, r *http.Request,
 	w.Write(scrapeScript)
 
 	// The initial response callback.
-	w.Write([]byte("<script type=\"text/javascript\">respond('" + 
+	w.Write([]byte("<script type=\"text/javascript\">respond('" +
 		id + "')</script>"))
 
 	// The __doPostBack response callback.
 	// http://stackoverflow.com/questions/6504472/how-to-wait-on-the-dopostback-method-to-complete-in-javascript
 	w.Write([]byte("<script type=\"text/javascript\">" +
 		"Sys.WebForms.PageRequestManager.getInstance()." +
-		"add_endRequest(function() { respond('" + id + "') })" + 
+		"add_endRequest(function() { respond('" + id + "') })" +
 		"</script>"))
 	smutex.Lock()
 	smap[id] = &scrapeState{page, -1}
@@ -135,7 +177,6 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	}
 	//dump, _ := httputil.DumpRequest(r, true)
 	//log.Println("Handling request:", r.Method, r.URL, len(dump), "bytes")
-	boards.SleepAWhile(r.URL.Path, r.URL.RawQuery)
 	reverseProxy.ServeHTTP(w, r)
 }
 
@@ -156,7 +197,7 @@ func response(w http.ResponseWriter, r *http.Request) {
 	if state.aid >= 0 {
 		act = actions[state.aid]
 	}
-	page.Channel() <- &scraper.Result{page, act, body, err}
+	page.Channel() <- &scraper.Result{act, body, err}
 
 	state.aid++
 	if state.aid < len(actions) {
@@ -171,21 +212,20 @@ func response(w http.ResponseWriter, r *http.Request) {
 }
 
 // loadBoard produces items for scraping on the channel.
-func loadBoard(pageCh chan<- scraper.Page, loadCh chan<- *boards.Load) error {
-	tt, err := boards.NewTrulos(loadCh)
+func loadBoard(loadf func ([]*boards.Load) error) (boards.LoadBoard, error) {
+	tt, err := boards.NewTrulos(loadf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := tt.Init(); err != nil {
-		return err
+		return nil, err
 	}
-	go tt.Read(pageCh)
-	return nil
+	return tt, nil
 }
 
 // openDb opens and tests the database connection.
 func openDb() (*sql.DB, error) {
-	conn, err := sql.Open("mysql", 
+	conn, err := sql.Open("mysql",
 		"test:@/Convoy?charset=utf8")
 	if err != nil {
 		return conn, err
@@ -199,8 +239,9 @@ func openDb() (*sql.DB, error) {
 	return conn, err
 }
 
-func saveLoad(stmt *sql.Stmt, load *boards.Load) error {
+func saveLoad(stmt *sql.Stmt, scrapeId int64, load *boards.Load) error {
 	_, err := stmt.Exec(
+		scrapeId,
 		load.PickupDate,
 		load.OriginState,
 		load.OriginCity,
@@ -216,39 +257,67 @@ func saveLoad(stmt *sql.Stmt, load *boards.Load) error {
 	return err
 }
 
-func processLoads(conn *sql.DB, loadCh <-chan *boards.Load) {
-	stmt, err := conn.Prepare(
-		"INSERT INTO Convoy.TruckLoads " +
-		"(PickupDate, OriginState, OriginCity, " +
-		"DestState, DestCity, LoadType, Length, " +
-		"Weight, Equipment, Price, Stops, Phone) " +
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
-	if err != nil {
-		log.Fatal("Could not prepare INSERT statement")
-	}
-	for load := range loadCh {
-		if err := saveLoad(stmt, load); err != nil {
-			log.Print("Could not save load: ", err)
+func processLoads(stmt *sql.Stmt, scrapeId int64, 
+	loads []*boards.Load) error {
+	for _, load := range loads {
+		if err := saveLoad(stmt, scrapeId, load); err != nil {
+			return err
 		}
 	}
+	return nil
 }
 
-func main() {
+func startScrape(pageCh chan<- scraper.Page, quitCh chan<- int) {
 	conn, err := openDb()
 	if err != nil {
 		log.Fatal("Couldn't connect to database: ", err)
 	}
-	defer conn.Close()
-	ch1 := make(chan scraper.Page)
-	ch2 := make(chan *boards.Load)
-	if err := loadBoard(ch1, ch2); err != nil {
+	result, err := conn.Exec("INSERT INTO Convoy.Scrapes " + 
+		"(StartTime) VALUES (NOW())")
+	if err != nil {
+		log.Fatal("Could not insert new Scrape: ", err)
+	}
+	scrapeId, err := result.LastInsertId()
+	if err != nil {
+		log.Fatal("Insert did not yield a ScrapeId: ", err)
+	}
+	stmt, err := conn.Prepare(
+		"INSERT INTO Convoy.TruckLoads " +
+		"(ScrapeId, PickupDate, OriginState, OriginCity, " +
+		"DestState, DestCity, LoadType, Length, " +
+		"Weight, Equipment, Price, Stops, Phone) " +
+		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+	if err != nil {
+		log.Fatal("Could not prepare INSERT statement")
+	}
+	board, err := loadBoard(func (loads []*boards.Load) error {
+		return processLoads(stmt, scrapeId, loads)
+	})
+	if err != nil {
 		log.Fatal("Couldn't initialize load board: ", err)
 	}
-	go processLoads(conn, ch2)
+	log.Print("Starting Convoy.ScrapeId = ", scrapeId)
+	board.Read(pageCh)
+	_, err = conn.Exec("UPDATE Convoy.Scrapes SET FinishTime = NOW() " + 
+		"WHERE ScrapeId = ?", scrapeId)
+	conn.Close()
+	quitCh <- 1
+}
 
-	http.HandleFunc("/scrape", scrapeHandler(ch1))
+func startServer(pageCh <-chan scraper.Page) {
+	http.HandleFunc("/scrape", scrapeHandler(pageCh))
 	http.HandleFunc("/response", response)
 	http.HandleFunc("/", handle)
 
 	log.Fatal(http.ListenAndServe(":8000", nil))
+}
+
+func main() {
+	pageCh := make(chan scraper.Page)
+	quitCh := make(chan int)
+
+	go startServer(pageCh)
+	go startScrape(pageCh, quitCh)
+
+	<- quitCh
 }

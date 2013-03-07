@@ -1,18 +1,29 @@
+-- -*- Mode: SQL -*-
+
 CREATE DATABASE IF NOT EXISTS Convoy;
 
 USE Convoy;
 
+CREATE TABLE Scrapes (
+       ScrapeId		BIGINT		NOT NULL AUTO_INCREMENT,
+       StartTime	DATETIME	NOT NULL,
+       FinishTime	DATETIME,
+       PRIMARY KEY (`ScrapeId`)
+);
+
 CREATE TABLE TruckLoads (
-       PickupDate	DATE,
-       OriginState	CHAR(2),
-       OriginCity	VARCHAR(32),
-       DestState	CHAR(2),
-       DestCity		VARCHAR(32),
-       LoadType		VARCHAR(16),
-       Length		INTEGER,
-       Weight		INTEGER,
-       Equipment	VARCHAR(32),
-       Price		FLOAT,
-       Stops		INTEGER,
-       Phone		VARCHAR(16)
+       ScrapeId		BIGINT		NOT NULL,
+       PickupDate	DATE		NOT NULL,
+       OriginState	CHAR(2) 	NOT NULL,
+       OriginCity	VARCHAR(32) 	NOT NULL,
+       DestState	CHAR(2) 	NOT NULL,
+       DestCity		VARCHAR(32) 	NOT NULL,
+       LoadType		VARCHAR(16) 	NOT NULL,
+       Length		INTEGER 	NOT NULL,
+       Weight		INTEGER 	NOT NULL,
+       Equipment	VARCHAR(32) 	NOT NULL,
+       Price		INTEGER 	NOT NULL,
+       Stops		INTEGER 	NOT NULL,
+       Phone		VARCHAR(16) 	NOT NULL,
+       FOREIGN KEY (`ScrapeId`) REFERENCES Scrapes(`ScrapeId`)       
 );

@@ -17,11 +17,11 @@ type Load struct {
 	OriginState string
 	DestCity    string
 	DestState   string
-	LoadType    string   // "Full" or "Partial" or ?
+	LoadType    string // "Full" or "Partial" or ?
 	Length      int
 	Weight      int
 	Equipment   string
-	Price       float64
+	Price       int
 	Stops       int
 	Phone       string
 }

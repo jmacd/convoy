@@ -16,8 +16,8 @@ import "code.google.com/p/go.net/html/atom"
 import "scraper"
 
 const (
-	baseUri       = "/Trulos/Post-Truck-Loads/Truck-Load-Board.aspx"
-	contentId     = "ContentPlaceHolder1_GridView1"
+	baseUri   = "/Trulos/Post-Truck-Loads/Truck-Load-Board.aspx"
+	contentId = "ContentPlaceHolder1_GridView1"
 	// Regexp for finding actions in HTML-escaped javascript
 	escapedRegexp = `[a-zA-Z0-9$&#;,]+`
 	pageRegexp    = `__doPostBack\(` + escapedRegexp +
@@ -29,15 +29,14 @@ type trulosBoard struct {
 	stateRe *regexp.Regexp
 	equipRe *regexp.Regexp
 	pageRe  *regexp.Regexp
-	procCh  chan *scraper.Result
-	loadCh  chan<- *Load
+	loadf   func ([]*Load) error
 	states  []*trulosState
 }
 
 type trulosState struct {
-	board *trulosBoard
-	name  string
-	uri   string
+	board          *trulosBoard
+	name           string
+	uri            string
 	equipmentTypes []string
 }
 
@@ -46,15 +45,17 @@ type trulosScrape struct {
 	equip   string
 	body    []byte
 	actions []string
+	compCh  chan<- int
+	respCh  chan *scraper.Result
+	loads   []*Load
 }
 
-func NewTrulos(loadCh chan<- *Load) (LoadBoard, error) {
+func NewTrulos(loadf func([]*Load) error) (LoadBoard, error) {
 	stateRe := regexp.MustCompile(regexp.QuoteMeta(baseUri+"?STATE=") + `(\w+)`)
 	equipRe := regexp.MustCompile(`\?STATE=(?:\w+)&amp;Equipment=([ /\w]+)`)
 	pageRe := regexp.MustCompile(pageRegexp)
-	procCh := make(chan *scraper.Result)
-	board := &trulosBoard{"www.trulos.com", stateRe, equipRe, pageRe, procCh, loadCh, nil}
-	go board.ProcessScrapes()
+	board := &trulosBoard{"www.trulos.com", stateRe, equipRe, pageRe,
+		loadf, nil}
 	return board, nil
 }
 
@@ -90,35 +91,50 @@ func (s *trulosState) queryForEquip(equip string) string {
 // Read asynchronously reads pages from the board and passes them to the
 // scrape-evaluator.
 func (t *trulosBoard) Read(pages chan<- scraper.Page) {
+	compCh := make(chan int)
 	for _, state := range t.states {
-		if state.name != "VT" {
-			// TODO(jmacd) Just one for now.
-			continue
-		}
+		// if state.name != "TB" {
+		// 	continue
+		// }
 		state.getEquipmentTypes()
 		for _, equip := range state.equipmentTypes {
-			//log.Println("Reading Trulos state", state.name, equip)
+			//log.Println("Reading Trulos state", 
+			//            state.name, equip)
 			query := state.queryForEquip(equip)
 			body, err := GetUrl(t.host, baseUri, query)
 			if err != nil {
 				log.Print("Problem reading Trulos", query)
 				continue
 			}
-			//log.Print("Got body...", string(body))
 			actions := state.board.pageRe.FindAllString(
 				string(body), -1)
 			for i := 0; i < len(actions); i++ {
 				actions[i] = html.UnescapeString(actions[i])
 			}
-			pages <- &trulosScrape{state, equip, HijackExternalRefs(body), actions}
+			scrape := &trulosScrape{state, equip, 
+				HijackExternalRefs(body), actions,
+			        compCh, make(chan *scraper.Result), 
+				nil}
+			// Process len(actions) + 1 pages, block until
+			// completion.
+			go scrape.ProcessScrapes()
+			pages <- scrape
+			<- compCh
 		}
 	}
 }
 
-func (t *trulosBoard) ProcessScrapes() {
-	for scrape := range t.procCh {
-		scrape.P.(*trulosScrape).Process(scrape)
+func (s *trulosScrape) ProcessScrapes() {
+	for i := 0; i <= len(s.actions); i++ {
+		s.Process(<- s.respCh)
 	}
+	if err := s.state.board.loadf(s.loads); err != nil {
+		log.Printf("Error writing %d loads: %s: %s",
+			len(s.loads), s, err)
+	} else {
+		log.Printf("Wrote %d loads: %s", len(s.loads), s)	
+	}
+	s.compCh <- 1
 }
 
 func (s *trulosScrape) Id() string {
@@ -134,7 +150,7 @@ func (s *trulosScrape) Actions() []string {
 }
 
 func (s *trulosScrape) Channel() chan<- *scraper.Result {
-	return s.state.board.procCh
+	return s.respCh
 }
 
 func (s *trulosScrape) Process(r *scraper.Result) {
@@ -145,8 +161,7 @@ func (s *trulosScrape) Process(r *scraper.Result) {
 		log.Print("Scrape parse error", s.state.name, s.equip, err)
 		return
 	}
-	count := s.TraverseHTML(doc)
-	log.Printf("Got %d loads for %s", count, s)
+	s.TraverseHTML(doc)
 }
 
 func attrIdIs(n *html.Node, value string) bool {
@@ -158,19 +173,18 @@ func attrIdIs(n *html.Node, value string) bool {
 	return false
 }
 
-func (s *trulosScrape) TraverseContentTable(n *html.Node, depth int) (cnt int) {
+func (s *trulosScrape) TraverseContentTable(n *html.Node, depth int) {
 	// Level 0 is TABLE
 	// Level 1 is TBODY
 	// Level 2 is TR
 	if depth == 2 && n.Type == html.ElementNode && n.DataAtom == atom.Tr {
 		row := s.TraverseContentRow(n, depth, nil)
-		cnt += s.ProcessRowData(row)
+		s.ProcessRowData(row)
 	} else {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			cnt += s.TraverseContentTable(c, depth+1)
+			s.TraverseContentTable(c, depth+1)
 		}
 	}
-	return
 }
 
 func (s *trulosScrape) TraverseContentRow(n *html.Node, depth int,
@@ -191,64 +205,65 @@ func (s *trulosScrape) TraverseContentRow(n *html.Node, depth int,
 	return data
 }
 
-func (s *trulosScrape) TraverseHTML(n *html.Node) (cnt int) {
+func (s *trulosScrape) TraverseHTML(n *html.Node) {
 	if n.Type == html.ElementNode && n.DataAtom == atom.Table &&
 		attrIdIs(n, contentId) {
-		cnt += s.TraverseContentTable(n, 0)
+		s.TraverseContentTable(n, 0)
 		return
 	}
 	for c := n.FirstChild; c != nil; c = c.NextSibling {
-		cnt += s.TraverseHTML(c)
+		s.TraverseHTML(c)
 	}
-	return
 }
 
-func (s *trulosScrape) ProcessRowData(row []string) int {
+func (s *trulosScrape) ProcessRowData(row []string) {
 	var trimmed []string
 	for _, item := range row {
-		str := strings.TrimSpace(item)
-		if len(str) == 0 {
-			continue
-		}
-		trimmed = append(trimmed, str)
+		trimmed = append(trimmed, strings.TrimSpace(item))
 	}
-	// We'll index up to trimmed[12], but there should be 14 cols.
-	if len(row) < 13 {
-		return 0
+	// We index up to trimmed[15]
+	if len(row) < 16 {
+		return
 	}
 	dateStr := trimmed[0]
 	dateSplit := strings.Split(dateStr, "/")
 	if len(dateSplit) != 3 {
-		log.Println("Bad date:", dateStr, s, trimmed)
-		return 0
+		log.Printf("Bad date: %s for %s: %q",
+			dateStr, s, trimmed)
+		return
 	}
 	dateYear, _ := strconv.Atoi(dateSplit[2])
 	dateMonth, _ := strconv.Atoi(dateSplit[0])
 	dateDay, _ := strconv.Atoi(dateSplit[1])
 	date := time.Date(dateYear, time.Month(dateMonth),
 		dateDay, 12, 0, 0, 0, time.Local)
-	origin := trimmed[1]
-	if trimmed[2] != s.state.name {
-		log.Println("Unexpected state:", trimmed[2], s, trimmed)
-		return 0
+	origin := trimmed[2]
+	if strings.ToUpper(trimmed[4]) != s.state.name {
+		log.Printf("Unexpected state: %s for %s: %q",
+			trimmed[4], s, trimmed)
+		return
 	}
-	llen, _ := strconv.Atoi(trimmed[6])
-	if trimmed[7] != s.equip {
-		log.Println("Unexpected equipment type:", 
-			trimmed[7], s, trimmed)
-		return 0
+	destCity, destState := trimmed[6], strings.ToUpper(trimmed[7])
+	loadType := trimmed[8]
+	llen := ParseLeadingInt(trimmed[9])
+	if trimmed[10] != s.equip {
+		log.Printf("Unexpected equipment type: %s for %s: %q",
+			trimmed[10], s, trimmed)
+		return
 	}
-	price, _ := strconv.ParseFloat(trimmed[8], 64)
-	weight, _ := strconv.Atoi(trimmed[9])
-	stops, _ := strconv.Atoi(trimmed[10])
+	price := ParseLeadingInt(trimmed[11])
+	weight := ParseLeadingInt(trimmed[12])
+	stops := ParseLeadingInt(trimmed[13])
+	if price < 10 {
+		price = 0 // TODO(jmacd): Assume per mile, fix.
+	}
 	if weight < 100 {
-		weight *= 1000 // Assume * thousand pounds
+		weight *= 1000 // Assume per thousand pounds
 	}
-	load := &Load{date, origin, s.state.name, trimmed[3], trimmed[4],
-		trimmed[5], llen, weight, s.equip, price, stops, trimmed[12]}
-	_ = load
-	s.state.board.loadCh <- load
-	return 1
+	phone := trimmed[15]
+	load := &Load{date, origin, s.state.name, destCity, destState,
+		loadType, llen, weight, s.equip, price, stops, phone}
+	s.loads = append(s.loads, load)
 }
 
 func (t *trulosBoard) String() string {
