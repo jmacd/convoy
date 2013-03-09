@@ -19,13 +19,17 @@ var (
 
 type Map struct {
 	Nodes map[int64]*Node
-	blockCh chan *osm.PrimitiveBlock
+	Ways map[int64]*Way
+	Rels map[int64]*Relation
+	blockCh chan *osm.Blob
 	graphCh chan *blockData
 	doneCh chan bool
 }
 
 type blockData struct {
 	nodes []Node
+	ways []Way
+	rels []Relation
 }
 
 type blockParams struct {
@@ -34,6 +38,14 @@ type blockParams struct {
 	latOffset int64
 	lonOffset int64
 }
+
+type MemberType int
+
+const (
+    NODE = 0
+    WAY = 1
+    RELATION = 2
+)
 
 type Attribute struct {
 	Key, Value string
@@ -46,10 +58,30 @@ type Node struct {
 	Attrs []Attribute
 }
 
+type Way struct {
+	Id int64
+	Attrs []Attribute
+	Refs []int64
+}
+
+type RelEntry struct {
+	Member int64
+	Type MemberType
+	Role string
+}
+
+type Relation struct {
+	Id int64
+	Attrs []Attribute
+	Ents []RelEntry
+}
+
 func NewMap() *Map {
 	return &Map{
 		make(map[int64]*Node),
-		make(chan *osm.PrimitiveBlock),
+		make(map[int64]*Way),
+		make(map[int64]*Relation),
+		make(chan *osm.Blob),
 		make(chan *blockData),
 		make(chan bool),
 	}
@@ -70,13 +102,14 @@ func readFixed(f io.Reader, s int32) ([]byte, error) {
 	return buf, nil
 }
 
-func (m *Map) decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, error) {
+func decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, error) {
 	ids := dn.GetId()
 	lats := dn.GetLat()
 	lons := dn.GetLon()
 	kvs := dn.GetKeysVals()
 	if len(ids) != len(lats) || len(ids) != len(lons) {
-		return nil, errors.New(fmt.Sprintf("Incorrect DB lengths: %d %d %d",
+		return nil, errors.New(fmt.Sprintf(
+			"Incorrect DB lengths: %d %d %d",
 			len(ids), len(lats), len(lons)))
 	}
 	nodes := make([]Node, len(ids))
@@ -86,10 +119,11 @@ func (m *Map) decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, err
 	var llat int64
 	var llon int64
 	kvi := 0
-	for i, n := range nodes {
+	for i := 0; i < len(ids); i++ {
 		lid += ids[i]
 		llat += lats[i]
 		llon += lons[i]
+		n := &nodes[i]
 		n.Id = lid
 		n.Lat = 1e-9 * float64(bp.latOffset + (bp.granularity * llat))
 		n.Lon = 1e-9 * float64(bp.lonOffset + (bp.granularity * llon))
@@ -106,15 +140,63 @@ func (m *Map) decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, err
 	return nodes, nil
 }
 
-func (m *Map) decodeWay(w *osm.Way, bp *blockParams) error {
+func decodeWay(pway *osm.Way, way *Way, bp *blockParams) error {
+	way.Id = pway.GetId()
+	way.Attrs = decodeAttrs(pway.GetKeys(), pway.GetVals(), bp)
+	way.Refs = make([]int64, len(pway.GetRefs()))
+	var lref int64
+	for i, dref := range pway.GetRefs() {
+		lref += dref
+		way.Refs[i] = lref
+	}
 	return nil
 }
 
-func (m *Map) decodeRelation(w *osm.Relation, bp *blockParams) error {
-	return nil
+func decodeAttrs(keys, vals []uint32, bp *blockParams) []Attribute {
+	attrs := make([]Attribute, len(keys))
+	for i := 0; i < len(keys); i++ {
+		attrs[i].Key = string(bp.strings[keys[i]])
+		attrs[i].Value = string(bp.strings[vals[i]])
+	}
+	return attrs
 }
 
-func (m *Map) decodeBlock(pb *osm.PrimitiveBlock) (*blockData, error) {
+func decodeRelation(prel *osm.Relation, rel *Relation, bp *blockParams) error {
+	rel.Id = prel.GetId()
+	rel.Attrs = decodeAttrs(prel.GetKeys(), prel.GetVals(), bp)
+	rel.Ents = make([]RelEntry, len(prel.GetMemids()))
+	var lmemid int64
+	for i, dmemid := range prel.GetMemids() {
+		lmemid += dmemid
+		rel.Ents[i].Member = lmemid
+		rel.Ents[i].Role = string(bp.strings[prel.GetRolesSid()[i]])
+		rel.Ents[i].Type = MemberType(prel.GetTypes()[i])
+	}
+	return nil
+	
+}
+
+func decodeWays(pways []*osm.Way, bp *blockParams) ([]Way, error) {
+	ways := make([]Way, len(pways))
+	for i, pway := range pways {
+		if err := decodeWay(pway, &ways[i], bp); err != nil {
+			return nil, err
+		}
+	}
+	return ways, nil
+}
+
+func decodeRelations(prels []*osm.Relation, bp *blockParams) ([]Relation, error) {
+	rels := make([]Relation, len(prels))
+	for i, prel := range prels {
+		if err := decodeRelation(prel, &rels[i], bp); err != nil {
+			return nil, err
+		}
+	}
+	return rels, nil
+}
+
+func decodeBlock(pb *osm.PrimitiveBlock) (*blockData, error) {
 	bparams := &blockParams{
 		pb.GetStringtable().GetS(), 
 		int64(pb.GetGranularity()),
@@ -126,35 +208,51 @@ func (m *Map) decodeBlock(pb *osm.PrimitiveBlock) (*blockData, error) {
 			return nil, errors.New("Unexpected non-dense node!")
 		}
 		if dn := pg.GetDense(); dn != nil {
-			nodes, err := m.decodeDenseNodes(dn, bparams)
+			nodes, err := decodeDenseNodes(dn, bparams)
 			if err != nil {
 				return nil, err
 			}
 			bdata.nodes = nodes
 		}
-		for _, w := range pg.GetWays() {
-			if err := m.decodeWay(w, bparams); err != nil {
-				return nil, err
-			}
+		ways, err := decodeWays(pg.GetWays(), bparams)
+		if err != nil {
+			return nil, err
 		}
-		for _, r := range pg.GetRelations() {
-			if err := m.decodeRelation(r, bparams); err != nil {
-				return nil, err
-			}
+		bdata.ways = ways
+		relations, err := decodeRelations(pg.GetRelations(), bparams)
+		if err != nil {
+			return nil, err
 		}
+		bdata.rels = relations
 	}
 	return bdata, nil
 }
 
+func (m *Map) processBlock(blob *osm.Blob) (*blockData, error) {
+	data, err := decompressBlob(blob)
+	if err != nil {
+		return nil, err
+	}
+	priblock := &osm.PrimitiveBlock{}
+	if err := proto.Unmarshal(data, priblock); err != nil {
+		return nil, err
+	}
+	bd, err := decodeBlock(priblock)
+	if err != nil {
+		return nil, err
+	}
+	return bd, nil
+}
+
 func (m *Map) decodeBlockFunc() {
-	for priblock := range m.blockCh {
-		if priblock == nil {
+	for blob := range m.blockCh {
+		if blob == nil {
 			break
 		}
-		bd, err := m.decodeBlock(priblock)
+		bd, err := m.processBlock(blob)
 		if err != nil {
 			log.Print("Block decode failed!")  // @@@ TODO(jmacd)
-			return
+			continue
 		}
 		m.graphCh <- bd
 	}
@@ -171,11 +269,76 @@ func (m *Map) buildGraph() {
 			}
 			continue
 		}
-		for _, n := range bd.nodes {
-			m.Nodes[n.Id] = &n
+		for i := 0; i < len(bd.nodes); i++ {
+			n := &bd.nodes[i]
+			m.Nodes[n.Id] = n
+		}
+		for i := 0; i < len(bd.ways); i++ {
+			w := &bd.ways[i]
+			m.Ways[w.Id] = w
+		}
+		for i := 0; i < len(bd.rels); i++ {
+			r := &bd.rels[i]
+			m.Rels[r.Id] = r
 		}
 	}
 	m.doneCh <- true
+}
+
+func decompressBlob(blob *osm.Blob) ([]byte, error) {
+	var data []byte
+	enc := "unknown"
+
+	// Uncompress the raw data, if necessary
+	switch {
+	case blob.Raw != nil:
+		enc = "raw"
+		data = blob.Raw
+	case blob.ZlibData != nil:
+		enc = "zlib"
+		zr, err := zlib.NewReader(bytes.NewReader(blob.ZlibData))
+		if err != nil {
+			return nil, err
+		}
+		defer zr.Close()
+		if data, err = readFixed(zr, blob.GetRawSize()); err != nil {
+			return nil, err
+		}
+	case blob.LzmaData != nil:
+		enc = "lzma"
+	}
+	if data == nil {
+		return nil, errors.New("Unsupported OSM data encoding: " + enc)
+	}
+	return data, nil
+}
+
+func readHeader(b *osm.Blob) error {
+	var hdrblock osm.HeaderBlock
+	data, err := decompressBlob(b)
+	if err != nil {
+		return err
+	}
+	if err := proto.Unmarshal(data, &hdrblock); err != nil {
+		return err
+	}
+	haveVersion := false
+	haveDense := false
+	for _, rf := range hdrblock.RequiredFeatures {
+		switch rf {
+		case "OsmSchema-V0.6":
+			haveVersion = true
+		case "DenseNodes":
+			haveDense = true
+		default:
+			return errors.New("Unknown map required feature:" + rf);
+		}
+	}
+	if !haveVersion || !haveDense {
+		return errors.New("Unsupported map type: " + 
+			proto.CompactTextString(&hdrblock))
+	}
+	return nil
 }
 
 func (m *Map) ReadMap(f io.Reader) error {
@@ -224,78 +387,58 @@ func (m *Map) ReadMap(f io.Reader) error {
 		nread += int64(bsize)
 		
 		// Unmarshal the blob
-		var blob osm.Blob
-		if err = proto.Unmarshal(blobb, &blob); err != nil {
+		blob := &osm.Blob{}
+		if err = proto.Unmarshal(blobb, blob); err != nil {
 			return err
-		}
-		enc := "unknown"
-		var data []byte
-
-		// Uncompress the raw data, if necessary
-		//
-		// TODO(jmacd) Move this into a function. Do it
-		// synchronously for the header, let a goproc
-		// decompress for ordinary blocks.
-		switch {
-		case blob.Raw != nil:
-			enc = "raw"
-			data = blob.Raw
-		case blob.ZlibData != nil:
-			enc = "zlib"
-			zr, err := zlib.NewReader(bytes.NewReader(blob.ZlibData))
-			if err != nil {
-				return err
-			}
-			defer zr.Close()
-			if data, err = readFixed(zr, blob.GetRawSize()); err != nil {
-				return err
-			}
-		case blob.LzmaData != nil:
-			enc = "lzma"
-		}
-		if data == nil {
-			return errors.New("Unsupported OSM data encoding: " + enc)
 		}
 
 		// Now process each blob
-		// log.Printf("Read a blob %s type %s size %d / %d", 
-		// 	bh.GetType(), enc, bsize, blob.GetRawSize())
 		switch bh.GetType() {
 		case "OSMHeader":
-			var hdrblock osm.HeaderBlock
-			if err := proto.Unmarshal(data, &hdrblock); err != nil {
+			if err := readHeader(blob); err != nil {
 				return err
-			}
-			haveVersion := false
-			haveDense := false
-			for _, rf := range hdrblock.RequiredFeatures {
-				switch rf {
-				case "OsmSchema-V0.6":
-					haveVersion = true
-				case "DenseNodes":
-					haveDense = true
-				default:
-					return errors.New("Unknown map required feature:" + rf);
-				}
-			}
-			if !haveVersion || !haveDense {
-				return errors.New("Unsupported map type: " + 
-				        proto.CompactTextString(&hdrblock))
 			}
 		case "OSMData":
-			priblock := &osm.PrimitiveBlock{}
-			if err := proto.Unmarshal(data, priblock); err != nil {
-				return err
-			}
-			m.blockCh <- priblock
+			m.blockCh <- blob
 		default:
-			return errors.New("Unknown OSM blob type: " + bh.GetType())
+			return errors.New("Unknown OSM blob type: " + 
+				bh.GetType())
 		}
 	}
 	for i := 0; i < numReaderProcs; i++ {
 		m.blockCh <- nil
 	}
 	var _ = <- m.doneCh
-	log.Println("Finished processing", nread, "bytes", len(m.Nodes), "nodes")
+	log.Println("Finished processing", nread, "bytes", 
+		len(m.Nodes), "nodes",
+		len(m.Ways), "ways",
+		len(m.Rels), "relations")
+	na := make(map[string]bool)
+	wa := make(map[string]bool)
+	ra := make(map[string]bool)
+	fu := func(s map[string]bool, as []Attribute) {
+		for _, a := range as {
+			ck := a.Key + "=" + a.Value
+			s[ck] = true
+		}
+	}
+	// for _, n := range m.Nodes {
+	// 	fu(na, n.Attrs)
+	// }
+	// for _, w := range m.Ways {
+	// 	fu(wa, w.Attrs)
+	// }
+	// for _, r := range m.Rels {
+	// 	fu(ra, r.Attrs)
+	// }
+	// for a, _ := range na {
+	// 	fmt.Println("NODE ATTR", a)
+	// }
+	// for a, _ := range wa {
+	// 	fmt.Println("WAY ATTR", a)
+	// }
+	// for a, _ := range ra {
+	// 	fmt.Println("REL ATTR", a)
+	// }
 	return nil
 }
