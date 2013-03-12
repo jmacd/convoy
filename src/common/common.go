@@ -6,7 +6,7 @@ import "time"
 
 const (
 	UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) " +
-		"AppleWebKit/537.17 (KHTML, like Gecko) Chrome/24.0.1312.57 Safari/537.17"
+		"AppleWebKit/537.18 (KHTML, like Gecko) Chrome/24.0.1312.58 Safari/537.18"
 )
 
 var (
@@ -22,12 +22,12 @@ func init() {
 
 	client = &http.Client{
 		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
-			DisableCompression: true},
+			/* DisableCompression: true */},
 	}
 }
 
 func SleepAWhile(url, query string) {
-	time.Sleep(time.Second * 10)
+	time.Sleep(time.Second / 2)
 }
 
 func GetUrl(host, uri, query string) ([]byte, error) {
@@ -49,4 +49,3 @@ func GetUrl(host, uri, query string) ([]byte, error) {
 	}
 	return body, nil
 }
-

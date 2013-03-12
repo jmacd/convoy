@@ -13,6 +13,7 @@ import "time"
 import "code.google.com/p/go.net/html"
 import "code.google.com/p/go.net/html/atom"
 
+import "common"
 import "scraper"
 
 const (
@@ -60,7 +61,7 @@ func NewTrulos(loadf func([]*Load) error) (LoadBoard, error) {
 }
 
 func (t *trulosBoard) Init() error {
-	body, err := GetUrl(t.host, "", "")
+	body, err := common.GetUrl(t.host, "", "")
 	if err != nil {
 		return err
 	}
@@ -72,7 +73,7 @@ func (t *trulosBoard) Init() error {
 }
 
 func (s *trulosState) getEquipmentTypes() {
-	body, err := GetUrl(s.board.host, s.uri, "")
+	body, err := common.GetUrl(s.board.host, s.uri, "")
 	if err != nil {
 		log.Print("No equipment types found", s)
 		return
@@ -101,7 +102,7 @@ func (t *trulosBoard) Read(pages chan<- scraper.Page) {
 			//log.Println("Reading Trulos state", 
 			//            state.name, equip)
 			query := state.queryForEquip(equip)
-			body, err := GetUrl(t.host, baseUri, query)
+			body, err := common.GetUrl(t.host, baseUri, query)
 			if err != nil {
 				log.Print("Problem reading Trulos", query)
 				continue
@@ -261,7 +262,8 @@ func (s *trulosScrape) ProcessRowData(row []string) {
 		weight *= 1000 // Assume per thousand pounds
 	}
 	phone := trimmed[15]
-	load := &Load{date, origin, s.state.name, destCity, destState,
+	load := &Load{date, common.ProperName(origin), s.state.name, 
+		common.ProperName(destCity), destState,
 		loadType, llen, weight, s.equip, price, stops, phone}
 	s.loads = append(s.loads, load)
 }

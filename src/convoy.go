@@ -12,9 +12,10 @@ import "regexp"
 import "strings"
 import "sync"
 import "time"
-import _ "github.com/Go-SQL-Driver/MySQL"
 
 import "boards"
+import "common"
+import "data"
 import "scraper"
 
 const (
@@ -101,7 +102,7 @@ func (p *proxyTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 		//log.Print("Did not sleep for cacheable content: ",
 		//	r.URL.Path, r.URL.RawQuery)
 	} else {
-		boards.SleepAWhile(r.URL.Path, r.URL.RawQuery)
+		common.SleepAWhile(r.URL.Path, r.URL.RawQuery)
 	}
 
 	//dump, _ := httputil.DumpResponse(resp, true)
@@ -125,7 +126,7 @@ func proxyRequest(r *http.Request) {
 	r.Header.Del("Referer")
 	r.Header.Del("If-Modified-Since")
 	r.Header.Del("User-Agent")
-	r.Header.Set("User-Agent", boards.UserAgent)
+	r.Header.Set("User-Agent", common.UserAgent)
 	if r.Method == "POST" {
 		r.Header.Del("Origin")
 		r.Header.Add("Origin", "http://www.trulos.com")
@@ -223,22 +224,6 @@ func loadBoard(loadf func ([]*boards.Load) error) (boards.LoadBoard, error) {
 	return tt, nil
 }
 
-// openDb opens and tests the database connection.
-func openDb() (*sql.DB, error) {
-	conn, err := sql.Open("mysql",
-		"test:@/Convoy?charset=utf8")
-	if err != nil {
-		return conn, err
-	}
-	// Test that the connection is good; because the driver call
-	// to open the database is defered until the first request.
-	_, err = conn.Exec("SELECT 1;")
-	if err != nil {
-		log.Fatal("Database not opened!", err)
-	}
-	return conn, err
-}
-
 func saveLoad(stmt *sql.Stmt, scrapeId int64, load *boards.Load) error {
 	_, err := stmt.Exec(
 		scrapeId,
@@ -268,7 +253,7 @@ func processLoads(stmt *sql.Stmt, scrapeId int64,
 }
 
 func startScrape(pageCh chan<- scraper.Page, quitCh chan<- int) {
-	conn, err := openDb()
+	conn, err := data.OpenDb()
 	if err != nil {
 		log.Fatal("Couldn't connect to database: ", err)
 	}

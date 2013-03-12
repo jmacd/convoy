@@ -1,5 +1,6 @@
 package common
 
+import "errors"
 import "log"
 import "regexp"
 import "strings"
@@ -19,6 +20,7 @@ var (
 	wikiUrlRe = regexp.MustCompile(
 		`^http://` + WikiHost + wikiBaseUri + `([^#]+)`)
 	wikiCityStateRe = regexp.MustCompile(`(.*), ([^,]+)`)
+	googlBlockRe = regexp.MustCompile(`To continue, please type the characters below`)
 )
 
 // Maps 2-character state codes to full names
@@ -119,6 +121,7 @@ var expansions = map[string]string {
 	"Frg": "Forge",
 	"Ft": "Fort",
 	"Ft.": "Fort",
+	"Gdn": "Garden",
 	//"Gr": [] Great or Grand
 	"Grv": "Grove",
 	"Hgts": "Heights",
@@ -201,7 +204,7 @@ func unwikiProperName(s string) string {
 	return ProperName(strings.Replace(s, "_", " ", -1))
 }
 
-func GuessWikiUri(cs CityState) (CityState, string) {
+func GuessWikiUri(cs CityState) (CityState, string, error) {
 	exp := CityState{ExpandCitySpelling(cs.City), StateName(cs.State)}
 	
 	googQuery := "?q=" + strings.Replace(exp.City + " " + 
@@ -210,6 +213,9 @@ func GuessWikiUri(cs CityState) (CityState, string) {
 
 	if err == nil {
 		var wikiNames []string
+		if len(googlBlockRe.Find(googXml)) != 0 {
+			return CityState{}, "", errors.New("Google is blocking us!")
+		}
 		err := scraper.ParseXml(googXml, atom.A, "href",
 			func (value string) func (text string) {
 			m := wikiUrlRe.FindStringSubmatch(value)
@@ -224,18 +230,16 @@ func GuessWikiUri(cs CityState) (CityState, string) {
 		if err != nil {
 			log.Print("Could not parse Google result:", googQuery)
 		}
+		log.Print("Google: ", string(googXml))
 		if len(wikiNames) != 0 {
-			wn := wikiNames[0]
-			m := wikiCityStateRe.FindStringSubmatch(wn)
-			if len(m) != 0 {
-				if m[2] == exp.State {
-					return CityState{m[1], m[2]}, wikiBaseUri + wn
-				}
+			wcs := ParseCityState(wikiNames[0])
+			if len(wcs.City) != 0 && wcs.State == exp.State {
+				return wcs, wikiBaseUri + wikiNames[0], nil
 			}
 		}
 	}
 
-	return exp, wikiBaseUri + exp.WikiName()
+	return exp, wikiBaseUri + exp.WikiName(), nil
 }
 
 func (cs CityState) String() string {
@@ -244,4 +248,13 @@ func (cs CityState) String() string {
 
 func (cs CityState) WikiName() string {
 	return wikiProperName(cs.City) + ",_" + wikiProperName(cs.State)
+}
+
+func ParseCityState(s string) (cs CityState) {
+	m := wikiCityStateRe.FindStringSubmatch(s)
+	if len(m) != 0 {
+		cs.City = m[1]
+		cs.State = m[2]
+	}
+	return 
 }

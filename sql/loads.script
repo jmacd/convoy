@@ -4,26 +4,67 @@ CREATE DATABASE IF NOT EXISTS Convoy;
 
 USE Convoy;
 
-CREATE TABLE Scrapes (
+CREATE TABLE IF NOT EXISTS Scrapes (
        ScrapeId		BIGINT		NOT NULL AUTO_INCREMENT,
        StartTime	DATETIME	NOT NULL,
        FinishTime	DATETIME,
-       PRIMARY KEY (`ScrapeId`)
-);
+       PRIMARY KEY (`ScrapeId`))
+       CHARACTER SET = utf8,
+       COLLATE = utf8_bin;
 
-CREATE TABLE TruckLoads (
+CREATE TABLE IF NOT EXISTS TruckLoads (
        ScrapeId		BIGINT		NOT NULL,
        PickupDate	DATE		NOT NULL,
        OriginState	CHAR(2) 	NOT NULL,
-       OriginCity	VARCHAR(32) 	NOT NULL,
+       OriginCity	VARCHAR(64) 	NOT NULL,
        DestState	CHAR(2) 	NOT NULL,
-       DestCity		VARCHAR(32) 	NOT NULL,
+       DestCity		VARCHAR(64) 	NOT NULL,
        LoadType		VARCHAR(16) 	NOT NULL,
        Length		INTEGER 	NOT NULL,
        Weight		INTEGER 	NOT NULL,
-       Equipment	VARCHAR(32) 	NOT NULL,
+       Equipment	VARCHAR(64) 	NOT NULL,
        Price		INTEGER 	NOT NULL,
        Stops		INTEGER 	NOT NULL,
        Phone		VARCHAR(16) 	NOT NULL,
-       FOREIGN KEY (`ScrapeId`) REFERENCES Scrapes(`ScrapeId`)       
-);
+
+       INDEX OCityState	 (OriginCity, OriginState) USING HASH,
+       INDEX DCityState	 (DestCity, DestState) USING HASH,
+       FOREIGN KEY (`ScrapeId`) REFERENCES Scrapes(`ScrapeId`))
+       CHARACTER SET = utf8,
+       COLLATE = utf8_bin;
+
+CREATE TABLE IF NOT EXISTS Corrections (
+       InCity 		 VARCHAR(64)	NOT NULL,
+       InState		 CHAR(2)	NOT NULL,
+       OutCity 		 VARCHAR(64)	NOT NULL,
+       OutState		 CHAR(2)	NOT NULL,
+
+       INDEX ICityState	 (InCity, InState) USING HASH,
+       INDEX OCityState	 (OutCity, OutState) USING HASH,
+       PRIMARY KEY (InCity, InState)
+       )
+       CHARACTER SET = utf8,
+       COLLATE = utf8_bin;
+
+CREATE TABLE IF NOT EXISTS Locations (
+       LocCity 		 VARCHAR(64)	NOT NULL,
+       LocState		 CHAR(2)	NOT NULL,
+       Latitude		 DOUBLE		NOT NULL,
+       Longitude	 DOUBLE		NOT NULL,
+
+       INDEX LCityState	 (LocCity, LocState) USING HASH,
+       PRIMARY KEY (LocCity, LocState)
+       )
+       CHARACTER SET = utf8,
+       COLLATE = utf8_bin;
+
+
+CREATE VIEW LoadCityStates (C, S) AS 
+       SELECT OriginCity C, OriginState S FROM Convoy.TruckLoads
+       UNION ALL SELECT DestCity C, DestState S FROM Convoy.TruckLoads;
+
+CREATE VIEW GeoCityStates (C, S) AS 
+       SELECT InCity C, InState S FROM Convoy.Corrections
+       UNION ALL SELECT LocCity C, LocState S FROM Convoy.Locations;
+
+-- SELECT C, S FROM (SELECT C, S FROM LoadCityStates GROUP BY C, S) AS Loads WHERE (C, S) NOT IN (SELECT C, S FROM GeoCityStates AS Places GROUP BY C, S);

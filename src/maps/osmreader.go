@@ -413,15 +413,15 @@ func (m *Map) ReadMap(f io.Reader) error {
 		len(m.Nodes), "nodes",
 		len(m.Ways), "ways",
 		len(m.Rels), "relations")
-	na := make(map[string]bool)
-	wa := make(map[string]bool)
-	ra := make(map[string]bool)
-	fu := func(s map[string]bool, as []Attribute) {
-		for _, a := range as {
-			ck := a.Key + "=" + a.Value
-			s[ck] = true
-		}
-	}
+	// na := make(map[string]bool)
+	// wa := make(map[string]bool)
+	// ra := make(map[string]bool)
+	// fu := func(s map[string]bool, as []Attribute) {
+	// 	for _, a := range as {
+	// 		ck := a.Key + "=" + a.Value
+	// 		s[ck] = true
+	// 	}
+	// }
 	// for _, n := range m.Nodes {
 	// 	fu(na, n.Attrs)
 	// }
