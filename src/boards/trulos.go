@@ -2,19 +2,22 @@
 
 package boards
 
-import "fmt"
 import "bytes"
+import "flag"
+import "fmt"
 import "log"
-import "regexp"
 import "net/url"
-import "strings"
+import "regexp"
 import "strconv"
+import "strings"
 import "time"
 import "code.google.com/p/go.net/html"
 import "code.google.com/p/go.net/html/atom"
 
 import "common"
 import "scraper"
+
+var stateRe = flag.String("trulos_state_regexp", ".*", "")
 
 const (
 	baseUri   = "/Trulos/Post-Truck-Loads/Truck-Load-Board.aspx"
@@ -27,9 +30,10 @@ const (
 
 type trulosBoard struct {
 	host    string
-	stateRe *regexp.Regexp
+	stateUriRe *regexp.Regexp
 	equipRe *regexp.Regexp
 	pageRe  *regexp.Regexp
+	stateProcRe *regexp.Regexp
 	loadf   func ([]*Load) error
 	states  []*trulosState
 }
@@ -52,10 +56,12 @@ type trulosScrape struct {
 }
 
 func NewTrulos(loadf func([]*Load) error) (LoadBoard, error) {
-	stateRe := regexp.MustCompile(regexp.QuoteMeta(baseUri+"?STATE=") + `(\w+)`)
+	stateUriRe := regexp.MustCompile(regexp.QuoteMeta(baseUri+"?STATE=") + `(\w+)`)
 	equipRe := regexp.MustCompile(`\?STATE=(?:\w+)&amp;Equipment=([ /\w]+)`)
 	pageRe := regexp.MustCompile(pageRegexp)
-	board := &trulosBoard{"www.trulos.com", stateRe, equipRe, pageRe,
+	stateProcRe := regexp.MustCompile(*stateRe)
+	board := &trulosBoard{"www.trulos.com", 
+		stateUriRe, equipRe, pageRe, stateProcRe,
 		loadf, nil}
 	return board, nil
 }
@@ -65,7 +71,7 @@ func (t *trulosBoard) Init() error {
 	if err != nil {
 		return err
 	}
-	links := t.stateRe.FindAllStringSubmatch(string(body), -1)
+	links := t.stateUriRe.FindAllStringSubmatch(string(body), -1)
 	for _, si := range links {
 		t.states = append(t.states, &trulosState{t, si[1], si[0], nil})
 	}
@@ -94,9 +100,9 @@ func (s *trulosState) queryForEquip(equip string) string {
 func (t *trulosBoard) Read(pages chan<- scraper.Page) {
 	compCh := make(chan int)
 	for _, state := range t.states {
-		// if state.name != "TB" {
-		// 	continue
-		// }
+		if len(t.stateProcRe.FindString(state.name)) == 0 {
+			continue
+		}
 		state.getEquipmentTypes()
 		for _, equip := range state.equipmentTypes {
 			//log.Println("Reading Trulos state", 

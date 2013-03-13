@@ -1,9 +1,10 @@
 package main
 
-import "database/sql"
-import "io/ioutil"
 import "bytes"
+import "database/sql"
+import "flag"
 import "fmt"
+import "io/ioutil"
 import "log"
 import "net/http"
 import "net/http/httputil"
@@ -17,6 +18,9 @@ import "boards"
 import "common"
 import "data"
 import "scraper"
+
+var http_port = flag.Int("http_port", 8000, "")
+var xvfb_port_offset = flag.Int("xvfb_port_offset", 1, "")
 
 const (
 	scrapeToken     = "Scraper-Token"
@@ -257,8 +261,8 @@ func startScrape(pageCh chan<- scraper.Page, quitCh chan<- int) {
 	if err != nil {
 		log.Fatal("Couldn't connect to database: ", err)
 	}
-	result, err := conn.Exec("INSERT INTO Convoy.Scrapes " + 
-		"(StartTime) VALUES (NOW())")
+	result, err := conn.Exec("INSERT INTO " + data.Table("Scrapes") + 
+		" (StartTime) VALUES (NOW())")
 	if err != nil {
 		log.Fatal("Could not insert new Scrape: ", err)
 	}
@@ -267,8 +271,8 @@ func startScrape(pageCh chan<- scraper.Page, quitCh chan<- int) {
 		log.Fatal("Insert did not yield a ScrapeId: ", err)
 	}
 	stmt, err := conn.Prepare(
-		"INSERT INTO Convoy.TruckLoads " +
-		"(ScrapeId, PickupDate, OriginState, OriginCity, " +
+		"INSERT INTO " + data.Table("TruckLoads") +
+		" (ScrapeId, PickupDate, OriginState, OriginCity, " +
 		"DestState, DestCity, LoadType, Length, " +
 		"Weight, Equipment, Price, Stops, Phone) " +
 		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -281,27 +285,36 @@ func startScrape(pageCh chan<- scraper.Page, quitCh chan<- int) {
 	if err != nil {
 		log.Fatal("Couldn't initialize load board: ", err)
 	}
-	log.Print("Starting Convoy.ScrapeId = ", scrapeId)
+	log.Print("Starting ", data.Table("ScrapeId"), " = ", scrapeId)
 	board.Read(pageCh)
-	_, err = conn.Exec("UPDATE Convoy.Scrapes SET FinishTime = NOW() " + 
+	_, err = conn.Exec("UPDATE " + data.Table("Scrapes") + 
+		" SET FinishTime = NOW() " + 
 		"WHERE ScrapeId = ?", scrapeId)
 	conn.Close()
 	quitCh <- 1
 }
 
-func startServer(pageCh <-chan scraper.Page) {
+func startServer(pageCh <-chan scraper.Page) (*scraper.Browser, error) {
 	http.HandleFunc("/scrape", scrapeHandler(pageCh))
 	http.HandleFunc("/response", response)
 	http.HandleFunc("/", handle)
 
-	log.Fatal(http.ListenAndServe(":8000", nil))
+	return scraper.NewBrowser(
+		*http_port, *xvfb_port_offset, "/scrape", 
+		http.DefaultServeMux)
 }
 
 func main() {
+	flag.Parse()
 	pageCh := make(chan scraper.Page)
 	quitCh := make(chan int)
 
-	go startServer(pageCh)
+	browser, err := startServer(pageCh)
+	if err != nil {
+		log.Fatalln("Failed to start HTTP server", err)
+	}
+	defer browser.Cleanup()
+
 	go startScrape(pageCh, quitCh)
 
 	<- quitCh

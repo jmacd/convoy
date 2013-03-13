@@ -11,6 +11,7 @@ CFILES = \
 	boards/util.go \
 	boards/loadboard.go \
 	boards/trulos.go \
+	scraper/browser.go \
 	scraper/scrape.go
 
 MFILES = \
@@ -25,6 +26,7 @@ GFILES = \
 	common/location.go \
 	data/db.go \
 	data/fix.go \
+	scraper/browser.go \
 	scraper/xml.go
 
 BINDIR = ../bin

@@ -14,6 +14,8 @@ var show_locations = flag.Bool("show_locations", false, "")
 var show_corrections = flag.Bool("show_corrections", false, "")
 var show_load_places = flag.Bool("show_load_places", false, "")
 var try_finding = flag.String("try_finding", "", "")
+var http_port = flag.Int("http_port", 8000, "")
+var xvfb_port_offset = flag.Int("xvfb_port_offset", 1, "")
 
 type coordinates struct {
 	lat, long float64  // In degrees
@@ -33,33 +35,42 @@ func NewCityFinder(db *sql.DB) (*CityFinder, error) {
 	var err error
 	cf := &CityFinder{}
 	// TODO(jmacd) Understand why this query is so slow and figure out how to optimize it.
-	if cf.missingStmt, err = db.Prepare("SELECT C, S FROM (SELECT C, S FROM Convoy.LoadCityStates GROUP BY C, S) AS Loads WHERE (C, S) NOT IN (SELECT C, S FROM Convoy.GeoCityStates AS Places GROUP BY C, S)"); err != nil {
+	if cf.missingStmt, err = db.Prepare("SELECT C, S FROM (SELECT C, S FROM " + data.Table("LoadCityStates") + " GROUP BY C, S) AS Loads WHERE (C, S) NOT IN (SELECT C, S FROM " + data.Table("GeoCityStates") + " AS Places GROUP BY C, S)"); err != nil {
 		return nil, err
 	}
-	if cf.addCorStmt, err = db.Prepare("INSERT INTO Convoy.Corrections" +
+	if cf.addCorStmt, err = db.Prepare("INSERT INTO " + 
+		data.Table("Corrections") +
 		" (InCity, InState, OutCity, OutState)" +
 		" VALUES (?, ?, ?, ?)"); err != nil {
 		return nil, err
 	}
-	if cf.addLocStmt, err = db.Prepare("INSERT INTO Convoy.Locations" +
+	if cf.addLocStmt, err = db.Prepare("INSERT INTO " +
+		data.Table("Locations") +
 		" (LocCity, LocState, Latitude, Longitude)" +
 		" VALUES (?, ?, ?, ?)"); err != nil {
 		return nil, err
 	}
-	if cf.hasLocStmt, err = db.Prepare("SELECT * FROM Convoy.Locations" +
+	if cf.hasLocStmt, err = db.Prepare("SELECT * FROM " +
+		data.Table("Locations") +
 		" WHERE LocCity = ? AND LocState = ?"); err != nil {
 		return nil, err
 	}
-	if cf.getAllLocsStmt, err = db.Prepare("SELECT LocCity, LocState FROM " +
-		"Convoy.Locations GROUP BY LocCity, LocState"); err != nil {
+	if cf.getAllLocsStmt, err = db.Prepare(
+		"SELECT LocCity, LocState FROM " +
+		data.Table("GROUP") + 
+		" Locations BY LocCity, LocState"); err != nil {
 		return nil, err
 	}
-	if cf.getAllCorrStmt, err = db.Prepare("SELECT InCity, InState FROM " +
-		"Convoy.Corrections GROUP BY InCity, InState"); err != nil {
+	if cf.getAllCorrStmt, err = db.Prepare(
+		"SELECT InCity, InState FROM " +
+		data.Table("Corrections") +
+		" GROUP BY InCity, InState"); err != nil {
 		return nil, err
 	}
-	if cf.getAllLoadStmt, err = db.Prepare("SELECT C, S FROM " +
-		"Convoy.LoadCityStates GROUP BY C, S"); err != nil {
+	if cf.getAllLoadStmt, err = db.Prepare(
+		"SELECT C, S FROM " +
+		data.Table("LoadCityStates") + 
+		" GROUP BY C, S"); err != nil {
 		return nil, err
 	}
 	return cf, nil

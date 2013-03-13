@@ -1,13 +1,19 @@
 package data
 
 import "database/sql"
+import "flag"
 import "log"
 import _ "github.com/Go-SQL-Driver/MySQL"
 
+var dbName = flag.String("db_name", "", "Name of the DB")
+
 // OpenDb opens and tests the database connection.
 func OpenDb() (*sql.DB, error) {
+	if len(*dbName) == 0 {
+		log.Fatal("Database not specified, use --db_name")
+	}
 	conn, err := sql.Open("mysql",
-		"test:@/Convoy?charset=utf8")
+		"test:@/" + *dbName + "?charset=utf8")
 	if err != nil {
 		return conn, err
 	}
@@ -18,4 +24,8 @@ func OpenDb() (*sql.DB, error) {
 		log.Fatal("Database not opened!", err)
 	}
 	return conn, err
+}
+
+func Table(s string) string {
+	return *dbName + "." + s
 }
