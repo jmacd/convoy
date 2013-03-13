@@ -57,8 +57,8 @@ func NewCityFinder(db *sql.DB) (*CityFinder, error) {
 	}
 	if cf.getAllLocsStmt, err = db.Prepare(
 		"SELECT LocCity, LocState FROM " +
-		data.Table("GROUP") + 
-		" Locations BY LocCity, LocState"); err != nil {
+		data.Table("Locations") + 
+		" GROUP BY LocCity, LocState"); err != nil {
 		return nil, err
 	}
 	if cf.getAllCorrStmt, err = db.Prepare(
@@ -169,7 +169,8 @@ func (cf *CityFinder) tryFindingCoords(missing common.CityState) error {
 		return nil
 	}
 	log.Printf("(%s) coords %.3f,%.3f", name, c.lat, c.long)
-	_, err = cf.addLocStmt.Exec(name.City, common.StateCode(name.State), c.lat, c.long)
+	_, err = cf.addLocStmt.Exec(
+		name.City, common.StateCode(name.State), c.lat, c.long)
 	if err != nil {
 		return err
 	}

@@ -6,6 +6,7 @@ CFILES = \
 	convoy.go \
 	common/common.go \
 	common/coordinates.go \
+	common/google.go \
 	common/location.go \
 	data/db.go \
 	boards/util.go \
@@ -23,6 +24,7 @@ GFILES = \
 	geotool.go \
 	common/common.go \
 	common/coordinates.go \
+	common/google.go \
 	common/location.go \
 	data/db.go \
 	data/fix.go \

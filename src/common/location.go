@@ -1,26 +1,17 @@
 package common
 
-import "errors"
-import "log"
 import "regexp"
 import "strings"
-import "code.google.com/p/go.net/html/atom"
-
-import "scraper"
 
 const (
 	WikiHost = "en.wikipedia.org"
-	GoogleHost = "www.google.com"
-
 	wikiBaseUri = "/wiki/"
-	googleBaseUri = "/search"
 )
 
 var (
 	wikiUrlRe = regexp.MustCompile(
 		`^http://` + WikiHost + wikiBaseUri + `([^#]+)`)
 	wikiCityStateRe = regexp.MustCompile(`(.*), ([^,]+)`)
-	googlBlockRe = regexp.MustCompile(`To continue, please type the characters below`)
 )
 
 // Maps 2-character state codes to full names
@@ -206,38 +197,6 @@ func unwikiProperName(s string) string {
 
 func GuessWikiUri(cs CityState) (CityState, string, error) {
 	exp := CityState{ExpandCitySpelling(cs.City), StateName(cs.State)}
-	
-	googQuery := "?q=" + strings.Replace(exp.City + " " + 
-		exp.State + " site:en.wikipedia.org", " ", "+", -1)
-	googXml, err := GetUrl(GoogleHost, googleBaseUri, googQuery)
-
-	if err == nil {
-		var wikiNames []string
-		if len(googlBlockRe.Find(googXml)) != 0 {
-			return CityState{}, "", errors.New("Google is blocking us!")
-		}
-		err := scraper.ParseXml(googXml, atom.A, "href",
-			func (value string) func (text string) {
-			m := wikiUrlRe.FindStringSubmatch(value)
-			if len(m) != 0 {
-				return func (text string) {
-					wikiNames = append(wikiNames, 
-						unwikiProperName(m[1]))
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			log.Print("Could not parse Google result:", googQuery)
-		}
-		log.Print("Google: ", string(googXml))
-		if len(wikiNames) != 0 {
-			wcs := ParseCityState(wikiNames[0])
-			if len(wcs.City) != 0 && wcs.State == exp.State {
-				return wcs, wikiBaseUri + wikiNames[0], nil
-			}
-		}
-	}
 
 	return exp, wikiBaseUri + exp.WikiName(), nil
 }
