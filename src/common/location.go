@@ -196,9 +196,12 @@ func unwikiProperName(s string) string {
 }
 
 func GuessWikiUri(cs CityState) (CityState, string, error) {
-	exp := CityState{ExpandCitySpelling(cs.City), StateName(cs.State)}
-
-	return exp, wikiBaseUri + exp.WikiName(), nil
+	name := CityState{ExpandCitySpelling(cs.City), StateName(cs.State)}
+	gname, guri, gerr := SearchGoogle(name)
+	if gerr == nil && len(gname.City) != 0 {
+		return gname, guri, gerr
+	}
+	return name, name.WikiName(), nil
 }
 
 func (cs CityState) String() string {
@@ -206,7 +209,7 @@ func (cs CityState) String() string {
 }
 
 func (cs CityState) WikiName() string {
-	return wikiProperName(cs.City) + ",_" + wikiProperName(cs.State)
+	return wikiBaseUri + wikiProperName(cs.City) + ",_" + wikiProperName(cs.State)
 }
 
 func ParseCityState(s string) (cs CityState) {
@@ -217,3 +220,4 @@ func ParseCityState(s string) (cs CityState) {
 	}
 	return 
 }
+

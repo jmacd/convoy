@@ -1,7 +1,8 @@
 package common
 
-import "net/http"
+import "crypto/tls"
 import "io/ioutil"
+import "net/http"
 import "time"
 
 const (
@@ -11,6 +12,7 @@ const (
 
 var (
 	client      *http.Client
+	secure      *http.Client
 )
 
 func init() {
@@ -24,6 +26,11 @@ func init() {
 		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
 			/* DisableCompression: true */},
 	}
+	secure = &http.Client{
+		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
+		TLSClientConfig: &tls.Config{RootCAs: nil},
+		},
+	}
 }
 
 func SleepAWhile(url, query string) {
@@ -31,14 +38,24 @@ func SleepAWhile(url, query string) {
 }
 
 func GetUrl(host, uri, query string) ([]byte, error) {
+	return GetUrlInternal("http", host, uri, query, client)
+}
+
+
+func GetSecureUrl(host, uri, query string) ([]byte, error) {
+	return GetUrlInternal("https", host, uri, query, secure)
+}
+
+func GetUrlInternal(
+	protocol, host, uri, query string, c *http.Client) ([]byte, error) {
 	SleepAWhile(uri, query)
-	url := "http://" + host + uri + query
+	url := protocol + "://" + host + uri + query
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Add("User-Agent", UserAgent)
-	resp, err := client.Do(req)
+	resp, err := c.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -5,6 +5,14 @@ import "flag"
 import "log"
 import _ "github.com/Go-SQL-Driver/MySQL"
 
+const (
+	Corrections = "Corrections"
+	Locations = "Locations"
+	TruckLoads = "TruckLoads"
+	LoadCityStates = "LoadCityStates"
+	GeoCityStates = "GeoCityStates"
+)
+
 var dbName = flag.String("db_name", "", "Name of the DB")
 
 // OpenDb opens and tests the database connection.
