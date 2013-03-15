@@ -113,7 +113,7 @@ var expansions = map[string]string {
 	"Ft": "Fort",
 	"Ft.": "Fort",
 	"Gdn": "Garden",
-	//"Gr": [] Great or Grand
+	//"Gr": TODO [] Great or Grand
 	"Grv": "Grove",
 	"Hgts": "Heights",
 	"Hts": "Heights",
@@ -195,21 +195,27 @@ func unwikiProperName(s string) string {
 	return ProperName(strings.Replace(s, "_", " ", -1))
 }
 
-func GuessWikiUri(cs CityState) (CityState, string, error) {
+func GuessWikiUri1(cs CityState) (CityState, string) {
 	name := CityState{ExpandCitySpelling(cs.City), StateName(cs.State)}
+	return name, name.WikiUri()
+}
+
+func GuessWikiUri2(cs CityState) (CityState, string, error) {
+	name, _ := GuessWikiUri1(cs)
 	gname, guri, gerr := SearchGoogle(name)
-	if gerr == nil && len(gname.City) != 0 {
-		return gname, guri, gerr
+	if gerr != nil {
+		return name, "", gerr
 	}
-	return name, name.WikiName(), nil
+	return gname, guri, nil
 }
 
 func (cs CityState) String() string {
 	return cs.City + ", " + cs.State
 }
 
-func (cs CityState) WikiName() string {
-	return wikiBaseUri + wikiProperName(cs.City) + ",_" + wikiProperName(cs.State)
+func (cs CityState) WikiUri() string {
+	return wikiBaseUri + 
+		wikiProperName(cs.City) + ",_" + wikiProperName(cs.State)
 }
 
 func ParseCityState(s string) (cs CityState) {

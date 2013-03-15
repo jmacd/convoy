@@ -10,6 +10,7 @@ import "data"
 import "common"
 import "scraper"
 
+var dry_run = flag.Bool("dry_run", false, "")
 var show_locations = flag.Bool("show_locations", false, "")
 var show_corrections = flag.Bool("show_corrections", false, "")
 var show_load_places = flag.Bool("show_load_places", false, "")
@@ -127,42 +128,12 @@ func (cf *CityFinder) hasCorrection(cs common.CityState) (bool, error) {
 	return hasRows(cf.hasCorStmt, cs.City, common.StateCode(cs.State))
 }
 
-func (cf *CityFinder) tryFindingCoords(missing common.CityState) error {
-	// Missing comes directly from the board (is an abbreviation).
-	name, uri, err := common.GuessWikiUri(missing)
-	if err != nil {
-		return err
-	}
-	hasLoc, err := cf.hasLocation(name)
-	if err != nil {
-		return err
-	}
-	nameStateCode := common.StateCode(name.State)
-
-	if missing.City != name.City || missing.State != nameStateCode {
- 		hasCor, err := cf.hasCorrection(missing)
-		if err != nil {
-			return err
-		}
-		if !hasCor {
-			log.Printf("(%s, %s) -> (%s, %s) correction added (%s)", 
-				missing.City, missing.State, name.City, nameStateCode, uri)
-			_, err := cf.addCorStmt.Exec(missing.City, missing.State, 
-				name.City, nameStateCode)
-			if err != nil {
-				return err
-			}
-		}
-	}
-	if hasLoc {
-		return nil
-	}
-
+func getLocFromWiki(uri string) (coordinates, error) {
+	var c coordinates
 	xml, err := common.GetUrl(common.WikiHost, uri, "")
 	if err != nil {
-		return err
+		return c, err
 	}
-	var c coordinates
 	err = scraper.ParseXml(xml, atom.Span, "class", 
 		func (value string) func (text string) {
 		switch value {
@@ -177,20 +148,60 @@ func (cf *CityFinder) tryFindingCoords(missing common.CityState) error {
 		}
 		return nil
 	})
-	if err != nil {
-		return err
-	}
-	if c.lat == 0 || c.long == 0 {
-		log.Printf("(%s) -> (%s) city not found %s", missing, name, uri)
-		return nil
-	}
-	log.Printf("(%s) coords %.3f,%.3f", name, c.lat, c.long)
-	_, err = cf.addLocStmt.Exec(
-		name.City, common.StateCode(name.State), c.lat, c.long)
-	if err != nil {
-		return err
-	}
+	return c, nil
+}
+	
 
+func (cf *CityFinder) tryFindingCoords(missing common.CityState) error {
+	// Missing comes directly from the board (is an abbreviation).
+	// TODO(jmacd) Use GuessWikiUri1 first
+	// TODO(jmacd) avoid repeating Google queries made previously
+	name, uri, err := common.GuessWikiUri2(missing)
+	if err != nil {
+		return err
+	}
+	hasLoc, err := cf.hasLocation(name)
+	if err != nil {
+		return err
+	}
+	nameStateCode := common.StateCode(name.State)
+
+	var c coordinates
+	if !hasLoc {
+		c, err = getLocFromWiki(uri)
+		if err != nil {
+			return err
+		}
+		if c.lat == 0 || c.long == 0 {
+			log.Printf("(%s) -> (%s) city not found %s", 
+				missing, name, uri)
+			return nil
+		}
+	}
+	if missing.City != name.City || missing.State != nameStateCode {
+ 		hasCor, err := cf.hasCorrection(missing)
+		if err != nil {
+			return err
+		}
+		if !hasCor {
+			log.Printf("(%s, %s) -> (%s, %s) correction added (%s)", 
+				missing.City, missing.State, 
+				name.City, nameStateCode, uri)
+			_, err := cf.addCorStmt.Exec(missing.City, missing.State, 
+				name.City, nameStateCode)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if !hasLoc {
+		log.Printf("(%s) coords %.3f,%.3f", name, c.lat, c.long)
+		_, err = cf.addLocStmt.Exec(
+			name.City, common.StateCode(name.State), c.lat, c.long)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -203,9 +214,17 @@ func (cf *CityFinder) tryMissingCity(cs common.CityState) error {
 }
 
 func (cf *CityFinder) findMissingCities() error {
-	return doAll(cf.missingStmt, func (cs common.CityState) error {
+	count := 0
+	ret := doAll(cf.missingStmt, func (cs common.CityState) error {
+		count++
+		if *dry_run {
+			log.Println("Missing", cs)
+			return nil
+		}
 		return cf.tryMissingCity(cs)
 	})
+	log.Println("Found", count, "missing cities")
+	return ret
 }
 
 func showAll(stmt *sql.Stmt) error {
