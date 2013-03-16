@@ -58,6 +58,15 @@ CREATE TABLE IF NOT EXISTS Locations (
        CHARACTER SET = utf8,
        COLLATE = utf8_bin;
 
+CREATE TABLE IF NOT EXISTS UnknownLocations (
+       UnknownCity 		 VARCHAR(64)	NOT NULL,
+       UnknownState		 CHAR(2)	NOT NULL,
+
+       INDEX UCityState	 (UnknownCity, UnknownState) USING HASH,
+       PRIMARY KEY (UnknownCity, UnknownState)
+       )
+       CHARACTER SET = utf8,
+       COLLATE = utf8_bin;
 
 CREATE VIEW LoadCityStates (C, S) AS 
        SELECT OriginCity C, OriginState S FROM Convoy.TruckLoads
@@ -67,4 +76,12 @@ CREATE VIEW GeoCityStates (C, S) AS
        SELECT InCity C, InState S FROM Convoy.Corrections
        UNION ALL SELECT LocCity C, LocState S FROM Convoy.Locations;
 
--- SELECT C, S FROM (SELECT C, S FROM LoadCityStates GROUP BY C, S) AS Loads WHERE (C, S) NOT IN (SELECT C, S FROM GeoCityStates AS Places GROUP BY C, S);
+CREATE VIEW UnknownCityStates AS 
+       SELECT C, S FROM 
+       	     (SELECT C, S FROM LoadCityStates GROUP BY C, S) AS Loads
+       WHERE (C, S) NOT IN 
+       	     (SELECT C, S FROM GeoCityStates AS Places GROUP BY C, S);
+
+-- TODO(jmacd): A view of missing locations, i.e., ones with a correction
+-- (OutCity, OutState) that does not appear in Locations.
+

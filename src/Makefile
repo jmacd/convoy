@@ -55,4 +55,4 @@ $(BINDIR)/geotool: $(GFILES)
 test: test_common
 
 test_common:
-	go test -i common
+	go test common

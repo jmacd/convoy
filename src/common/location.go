@@ -92,46 +92,50 @@ var	stateMap =  map[string]string {
 
 var reverseStateMap = map[string]string{}
 
-var expansions = map[string]string {
-	"S": "South",
-	"W": "West",
-	"N": "North",
-	"E": "East",
-	"Afb": "Air Force Base",
-	"Bch": "Beach",
-	"Brch": "Branch",
-	"Ci": "City",
-	"Cit": "City",
-	"Crk": "Creek",
-	"Ctr": "Center",
-	"Cy": "City",
-	"Depo": "Depot",
-	"Fls": "Falls",
-	"Fk": "Fork",
-	"Forg": "Forge",
-	"Frg": "Forge",
-	"Ft": "Fort",
-	"Ft.": "Fort",
-	"Gdn": "Garden",
-	//"Gr": TODO [] Great or Grand
-	"Grv": "Grove",
-	"Hgts": "Heights",
-	"Hts": "Heights",
-	"Jct": "Junction",
-	"Lk": "Lake",
-	"Mt": "Mount",
-	"Mtn": "Mountain",
-	"Pk": "Park",
-	"Pnt": "Point",
-	"Prt": "Port",
-	"Rpds": "Rapids",
-	"Rvr": "River",
-	"Snta": "Santa",
-	"Spgs": "Springs",
-	"Spr": "Spring",
-	"Sprs": "Springs",
-	"St": "Saint",
-	"St.": "Saint",
+var expansions = map[string][]string {
+	"S": []string{"South"},
+	"W": []string{"West"},
+	"N": []string{"North"},
+	"E": []string{"East"},
+	"Afb": []string{"Air Force Base"},
+	"Ap": []string{"Airport"},
+	"Bch": []string{"Beach"},
+	"Brch": []string{"Branch"},
+	"Ci": []string{"City"},
+	"Cit": []string{"City"},
+	"Crk": []string{"Creek"},
+	"Ctr": []string{"Center"},
+	"Cy": []string{"City"},
+	"Depo": []string{"Depot"},
+	"Fk": []string{"Fork"},
+	"Fls": []string{"Falls"},
+	"Forg": []string{"Forge"},
+	"Frg": []string{"Forge"},
+	"Ft": []string{"Fort"},
+	"Ft.": []string{"Fort"},
+	"Gdn": []string{"Garden"},
+	"Gr": []string{"Great", "Grand"},
+	"Grv": []string{"Grove"},
+	"Hbr": []string{"Harbor"},
+	"Hgts": []string{"Heights"},
+	"Hts": []string{"Heights"},
+	"Intl": []string{"International"},
+	"Jct": []string{"Junction"},
+	"Lk": []string{"Lake"},
+	"Mt": []string{"Mount", "Mountain"},
+	"Mtn": []string{"Mountain"},
+	"Pk": []string{"Park"},
+	"Pnt": []string{"Point"},
+	"Prt": []string{"Port"},
+	"Rpds": []string{"Rapids"},
+	"Rvr": []string{"River"},
+	"Snta": []string{"Santa"},
+	"Spgs": []string{"Springs"},
+	"Spr": []string{"Spring"},
+	"Sprs": []string{"Springs"},
+	"Sta": []string{"Station"},
+	"St": []string{"Saint"},
+	"St.": []string{"Saint"},
 }
 
 type CityState struct {
@@ -164,15 +168,27 @@ func StateName(code string) string {
 	return code
 }
 
-func ExpandCitySpelling(city string) string {
+func ExpandCitySpelling(city string) []string {
 	names := strings.Split(ProperName(city), " ")
-	for i, n := range names {
-		r, ok := expansions[n]
-		if ok {
-			names[i] = r
+	exps := [][]string{[]string{}}
+	for _, n := range names {
+		l, ok := expansions[n]
+		if !ok {
+			l = []string{n}
 		}
+		var nexps [][]string
+		for _, r := range l {
+			for _, n := range exps {
+				nexps = append(nexps, append(n, r))
+			}
+		}
+		exps = nexps
 	}
-	return strings.Join(names, " ")
+	res := []string{}
+	for _, e := range exps {
+		res = append(res, strings.Join(e, " "))
+	}
+	return res
 }
 
 func ProperName(s string) string {
@@ -195,13 +211,16 @@ func unwikiProperName(s string) string {
 	return ProperName(strings.Replace(s, "_", " ", -1))
 }
 
-func GuessWikiUri1(cs CityState) (CityState, string) {
-	name := CityState{ExpandCitySpelling(cs.City), StateName(cs.State)}
-	return name, name.WikiUri()
+func GuessCityNames(cs CityState) (l []CityState) {
+	cities := ExpandCitySpelling(cs.City)
+	state := StateName(cs.State)
+	for _, city := range cities {
+		l = append(l, CityState{city, state})
+	}
+	return l
 }
 
-func GuessWikiUri2(cs CityState) (CityState, string, error) {
-	name, _ := GuessWikiUri1(cs)
+func CorrectCitySpelling(name CityState) (CityState, string, error) {
 	gname, guri, gerr := SearchGoogle(name)
 	if gerr != nil {
 		return name, "", gerr
@@ -226,4 +245,3 @@ func ParseCityState(s string) (cs CityState) {
 	}
 	return 
 }
-

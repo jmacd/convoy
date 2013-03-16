@@ -11,6 +11,7 @@ const (
 	TruckLoads = "TruckLoads"
 	LoadCityStates = "LoadCityStates"
 	GeoCityStates = "GeoCityStates"
+	UnknownLocations = "UnknownLocations"
 )
 
 var dbName = flag.String("db_name", "", "Name of the DB")
