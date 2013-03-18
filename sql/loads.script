@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS Corrections (
        InState		 CHAR(2)	NOT NULL,
        OutCity 		 VARCHAR(64)	NOT NULL,
        OutState		 CHAR(2)	NOT NULL,
+       Determined        VARCHAR(64)	NOT NULL,
 
        INDEX ICityState	 (InCity, InState) USING HASH,
        INDEX OCityState	 (OutCity, OutState) USING HASH,
@@ -51,6 +52,7 @@ CREATE TABLE IF NOT EXISTS Locations (
        LocState		 CHAR(2)	NOT NULL,
        Latitude		 DOUBLE		NOT NULL,
        Longitude	 DOUBLE		NOT NULL,
+       Determined        VARCHAR(64)	NOT NULL,
 
        INDEX LCityState	 (LocCity, LocState) USING HASH,
        PRIMARY KEY (LocCity, LocState)
@@ -58,12 +60,21 @@ CREATE TABLE IF NOT EXISTS Locations (
        CHARACTER SET = utf8,
        COLLATE = utf8_bin;
 
-CREATE TABLE IF NOT EXISTS UnknownLocations (
-       UnknownCity 		 VARCHAR(64)	NOT NULL,
-       UnknownState		 CHAR(2)	NOT NULL,
+CREATE TABLE IF NOT EXISTS GoogleUnknown (
+       UnknownCity   	   VARCHAR(64)	NOT NULL,
+       UnknownState	   CHAR(2)	NOT NULL,
 
-       INDEX UCityState	 (UnknownCity, UnknownState) USING HASH,
+       INDEX GUCityState   (UnknownCity, UnknownState) USING HASH,
        PRIMARY KEY (UnknownCity, UnknownState)
+       )
+       CHARACTER SET = utf8,
+       COLLATE = utf8_bin;
+
+CREATE TABLE IF NOT EXISTS WikipediaUnknown (
+       UnknownUri   	   VARCHAR(128)	NOT NULL,
+
+       INDEX UUri  (UnknownUri) USING HASH,
+       PRIMARY KEY (UnknownUri)
        )
        CHARACTER SET = utf8,
        COLLATE = utf8_bin;

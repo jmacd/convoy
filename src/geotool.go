@@ -30,8 +30,10 @@ type CityFinder struct {
 	hasCorStmt *sql.Stmt
 	addLocStmt *sql.Stmt
 	hasLocStmt *sql.Stmt
-	addUnkStmt *sql.Stmt
-	hasUnkStmt *sql.Stmt
+	addGoogUnkStmt *sql.Stmt
+	hasGoogUnkStmt *sql.Stmt
+	addWikiUnkStmt *sql.Stmt
+	hasWikiUnkStmt *sql.Stmt
 	getAllLocsStmt *sql.Stmt
 	getAllCorrStmt *sql.Stmt
 	getAllLoadStmt *sql.Stmt
@@ -44,37 +46,36 @@ func NewCityFinder(db *sql.DB) (*CityFinder, error) {
 	if cf.missingStmt, err = db.Prepare("SELECT C, S FROM (SELECT C, S FROM " + data.Table(data.LoadCityStates) + " GROUP BY C, S) AS Loads WHERE (C, S) NOT IN (SELECT C, S FROM " + data.Table(data.GeoCityStates) + " AS Places GROUP BY C, S)"); err != nil {
 		return nil, err
 	}
-	if cf.addCorStmt, err = db.Prepare("INSERT INTO " + 
-		data.Table(data.Corrections) +
-		" (InCity, InState, OutCity, OutState)" +
-		" VALUES (?, ?, ?, ?)"); err != nil {
+	if cf.addCorStmt, err = data.InsertQuery(db, data.Corrections,
+		"InCity", "InState", "OutCity", "OutState", "Determined"); err != nil {
 		return nil, err
 	}
-	if cf.addLocStmt, err = db.Prepare("INSERT INTO " +
-		data.Table(data.Locations) +
-		" (LocCity, LocState, Latitude, Longitude)" +
-		" VALUES (?, ?, ?, ?)"); err != nil {
+	if cf.addLocStmt, err = data.InsertQuery(db, data.Locations,
+		"LocCity", "LocState", "Latitude", "Longitude", "Determined"); err != nil {
 		return nil, err
 	}
-	if cf.addUnkStmt, err = db.Prepare("INSERT INTO " +
-		data.Table(data.UnknownLocations) +
-		" (UnknownCity, UnknownState)" +
-		" VALUES (?, ?)"); err != nil {
+	if cf.addGoogUnkStmt, err = data.InsertQuery(db, data.GoogleUnknown,
+		"UnknownCity", "UnknownState"); err != nil {
 		return nil, err
 	}
-	if cf.hasCorStmt, err = db.Prepare("SELECT * FROM " +
-		data.Table(data.Corrections) +
-		" WHERE InCity = ? AND InState = ?"); err != nil {
+	if cf.addWikiUnkStmt, err = data.InsertQuery(db, data.WikipediaUnknown,
+		"UnknownUri"); err != nil {
 		return nil, err
 	}
-	if cf.hasLocStmt, err = db.Prepare("SELECT * FROM " +
-		data.Table(data.Locations) +
-		" WHERE LocCity = ? AND LocState = ?"); err != nil {
+	if cf.hasCorStmt, err = data.SelectQuery(db, data.Corrections, 
+		"InCity", "InState"); err != nil {
 		return nil, err
 	}
-	if cf.hasUnkStmt, err = db.Prepare("SELECT * FROM " +
-		data.Table(data.UnknownLocations) +
-		" WHERE UnknownCity = ? AND UnknownState = ?"); err != nil {
+	if cf.hasLocStmt, err = data.SelectQuery(db, data.Locations,
+		"LocCity", "LocState"); err != nil {
+		return nil, err
+	}
+	if cf.hasGoogUnkStmt, err = data.SelectQuery(db, data.GoogleUnknown,
+		"UnknownCity", "UnknownState"); err != nil {
+		return nil, err
+	}
+	if cf.hasWikiUnkStmt, err = data.SelectQuery(db, data.WikipediaUnknown,
+		"UnknownUri"); err != nil {
 		return nil, err
 	}
 	if cf.getAllLocsStmt, err = db.Prepare(
@@ -143,12 +144,23 @@ func (cf *CityFinder) hasCorrection(cs common.CityState) (bool, error) {
 	return hasRows(cf.hasCorStmt, cs.City, common.StateCode(cs.State))
 }
 
-func (cf *CityFinder) hasUnknownLocation(cs common.CityState) (bool, error) {
-	return hasRows(cf.hasUnkStmt, cs.City, common.StateCode(cs.State))
+func (cf *CityFinder) hasGoogleUnknown(cs common.CityState) (bool, error) {
+	return hasRows(cf.hasGoogUnkStmt, cs.City, common.StateCode(cs.State))
 }
 
-func getLocFromWiki(uri string) (coordinates, error) {
+func (cf *CityFinder) hasWikipediaUnknown(uri string) (bool, error) {
+	return hasRows(cf.hasWikiUnkStmt, uri)
+}
+
+func (cf *CityFinder) getLocFromWiki(uri string) (coordinates, error) {
 	var c coordinates
+	hasUnk, err := cf.hasWikipediaUnknown(uri)
+	if err != nil {
+		return c, err
+	}
+	if hasUnk {
+		return c, nil
+	}	
 	xml, err := common.GetUrl(common.WikiHost, uri, "")
 	if err != nil {
 		return c, err
@@ -167,10 +179,17 @@ func getLocFromWiki(uri string) (coordinates, error) {
 		}
 		return nil
 	})
+	if c.lat == 0 || c.long == 0 {
+		_, err = cf.addWikiUnkStmt.Exec(uri)
+		if err != nil {
+			return c, err
+		}
+	}
 	return c, nil
 }
 	
-func (cf *CityFinder) tryFindingCoords(missing, spelling common.CityState, wikiUri string) (bool, error) {
+func (cf *CityFinder) tryFindingCoords(
+	missing, spelling common.CityState, wikiUri, spellDet string) (bool, error) {
 	hasLoc, err := cf.hasLocation(spelling)
 	if err != nil {
 		return false, err
@@ -179,13 +198,13 @@ func (cf *CityFinder) tryFindingCoords(missing, spelling common.CityState, wikiU
 
 	var c coordinates
 	if !hasLoc {
-		c, err = getLocFromWiki(wikiUri)
+		c, err = cf.getLocFromWiki(wikiUri)
 		if err != nil {
 			return false, err
 		}
 		if c.lat == 0 || c.long == 0 {
-			log.Printf("(%s) -> (%s) city not found",
-				missing, spelling)
+			log.Printf("%s: city not found (%s)",
+				spelling, wikiUri)
 			return false, nil
 		}
 	}
@@ -199,16 +218,17 @@ func (cf *CityFinder) tryFindingCoords(missing, spelling common.CityState, wikiU
 				missing.City, missing.State, 
 				spelling.City, spellingStateCode, wikiUri)
 			_, err := cf.addCorStmt.Exec(missing.City, missing.State, 
-				spelling.City, spellingStateCode)
+				spelling.City, spellingStateCode, spellDet)
 			if err != nil {
 				return false, err
 			}
 		}
 	}
 	if !hasLoc {
-		log.Printf("(%s) coords %.3f,%.3f", spelling, c.lat, c.long)
+		log.Printf("(%s) coords %.3f,%.3f (%s)", spelling, c.lat, c.long, wikiUri)
 		_, err = cf.addLocStmt.Exec(
-			spelling.City, common.StateCode(spelling.State), c.lat, c.long)
+			spelling.City, common.StateCode(spelling.State), c.lat, c.long, 
+			wikiUri)
 		if err != nil {
 			return false, err
 		}
@@ -219,7 +239,7 @@ func (cf *CityFinder) tryFindingCoords(missing, spelling common.CityState, wikiU
 func (cf *CityFinder) tryMissingCity(missing common.CityState) error {
 	cities := common.GuessCityNames(missing)
 	for _, city := range cities {
-		found, err := cf.tryFindingCoords(missing, city, city.WikiUri())
+		found, err := cf.tryFindingCoords(missing, city, city.WikiUri(), "expanded")
 		if err != nil {
 			return err
 		}
@@ -231,31 +251,29 @@ func (cf *CityFinder) tryMissingCity(missing common.CityState) error {
 		return nil
 	}
 	for _, city := range cities {
-		// Don't waste Google API queries on cities we've already
-		// tried.
- 		hasUnk, err := cf.hasUnknownLocation(city)
+		hasUnk, err := cf.hasGoogleUnknown(city)
 		if err != nil {
 			return err
 		}
 		if hasUnk {
 			continue
 		}
-		spelling, wikiUri, err := common.CorrectCitySpelling(city)
+		spelling, wikiUri, spellDet, err := common.CorrectCitySpelling(city)
 		if err != nil {
 			// Typically this means daily search quota exceeded.
 			log.Println("Spell correction failed -- disabling")
 			try_spell_correction = false
 			return nil
 		}
-		found, err := cf.tryFindingCoords(missing, spelling, wikiUri)
+		found, err := cf.tryFindingCoords(
+			missing, spelling, wikiUri, spellDet)
 		if err != nil {
 			return err
 		}
 		if found {
 			return nil
 		}
-		// Add failure to avoid this query in the future
-		_, err = cf.addUnkStmt.Exec(
+		_, err = cf.addGoogUnkStmt.Exec(
 			city.City, common.StateCode(city.State))
 		if err != nil {
 			return err
@@ -272,9 +290,13 @@ func (cf *CityFinder) findMissingCities() error {
 			log.Println("Missing", cs)
 			return nil
 		}
-		return cf.tryMissingCity(cs)
+		err := cf.tryMissingCity(cs)
+		if err != nil {
+			log.Printf("Error on %s: %s", cs, err)
+		}
+		return nil
 	})
-	log.Println("Found", count, "missing cities")
+	log.Println("Queried", count, "cities")
 	return ret
 }
 

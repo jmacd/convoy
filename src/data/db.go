@@ -3,15 +3,19 @@ package data
 import "database/sql"
 import "flag"
 import "log"
+import "strings"
 import _ "github.com/Go-SQL-Driver/MySQL"
 
+type TableName string
+
 const (
-	Corrections = "Corrections"
-	Locations = "Locations"
-	TruckLoads = "TruckLoads"
-	LoadCityStates = "LoadCityStates"
-	GeoCityStates = "GeoCityStates"
-	UnknownLocations = "UnknownLocations"
+	Corrections TableName = "Corrections"
+	Locations TableName = "Locations"
+	TruckLoads TableName = "TruckLoads"
+	LoadCityStates TableName = "LoadCityStates"
+	GeoCityStates TableName = "GeoCityStates"
+	GoogleUnknown TableName = "GoogleUnknown"
+	WikipediaUnknown TableName = "WikipediaUnknown"
 )
 
 var dbName = flag.String("db_name", "", "Name of the DB")
@@ -35,6 +39,34 @@ func OpenDb() (*sql.DB, error) {
 	return conn, err
 }
 
-func Table(s string) string {
-	return *dbName + "." + s
+func Table(s TableName) string {
+	return *dbName + "." + string(s)
 }
+
+func insertPlaceHolders(columns []string) string {
+	qs := make([]string, len(columns))
+	for i, _ := range qs {
+		qs[i] = "?"
+	}
+	return strings.Join(qs, ", ")
+}
+
+func wherePlaceHolders(columns []string) string {
+	parts := make([]string, len(columns))
+	for i, col := range columns {
+		parts[i] = col + " = ?"
+	}
+	return strings.Join(parts, " AND ")
+}
+
+func InsertQuery(db *sql.DB, table TableName, columns ...string) (*sql.Stmt, error) {
+	return db.Prepare("INSERT INTO " + 
+		Table(table) + " (" + strings.Join(columns, ", ") + ") VALUES (" +
+		insertPlaceHolders(columns) + ")")
+}
+
+func SelectQuery(db *sql.DB, table TableName, columns ...string) (*sql.Stmt, error) {
+	return db.Prepare("SELECT * FROM " + Table(table) +
+		" WHERE " + wherePlaceHolders(columns))
+}
+

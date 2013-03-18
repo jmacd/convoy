@@ -18,6 +18,8 @@ CFILES = \
 MFILES = \
 	maptool.go \
 	maps/osmreader.go \
+	geo/kdtree.go \
+	geo/point.go \
 	$(PFILES)
 
 GFILES = \

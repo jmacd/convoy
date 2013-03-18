@@ -34,13 +34,12 @@ func init() {
 }
 
 func SleepAWhile(url, query string) {
-	time.Sleep(time.Second * 3)
+	time.Sleep(time.Second * 5)
 }
 
 func GetUrl(host, uri, query string) ([]byte, error) {
 	return GetUrlInternal("http", host, uri, query, client)
 }
-
 
 func GetSecureUrl(host, uri, query string) ([]byte, error) {
 	return GetUrlInternal("https", host, uri, query, secure)

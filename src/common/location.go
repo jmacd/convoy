@@ -11,7 +11,7 @@ const (
 var (
 	wikiUrlRe = regexp.MustCompile(
 		`^http://` + WikiHost + wikiBaseUri + `([^#]+)`)
-	wikiCityStateRe = regexp.MustCompile(`(.*), ([^,]+)`)
+	cityStateRe = regexp.MustCompile(`(.*), ([^,]+)`)
 )
 
 // Maps 2-character state codes to full names
@@ -88,37 +88,50 @@ var	stateMap =  map[string]string {
 	"TB": "Tabasco",
 	"AG": "Aguascalientes",
 	"OA": "Oaxaca",
+	"MX": "Mexico",
 }
 
 var reverseStateMap = map[string]string{}
 
 var expansions = map[string][]string {
 	"S": []string{"South"},
+	"So": []string{"North"},
 	"W": []string{"West"},
+	"No": []string{"North"},
 	"N": []string{"North"},
 	"E": []string{"East"},
+
 	"Afb": []string{"Air Force Base"},
 	"Ap": []string{"Airport"},
+	"Arprt": []string{"Airport"},
 	"Bch": []string{"Beach"},
+	"Brdg": []string{"Bridge"},
 	"Brch": []string{"Branch"},
+	"Brk": []string{"Brook"},
+	"Blf": []string{"Bluff"},
 	"Ci": []string{"City"},
 	"Cit": []string{"City"},
 	"Crk": []string{"Creek"},
 	"Ctr": []string{"Center"},
+	"Ct": []string{"Court"},
+	"Crt": []string{"Court"},
 	"Cy": []string{"City"},
 	"Depo": []string{"Depot"},
 	"Fk": []string{"Fork"},
+	"Fks": []string{"Forks"},
 	"Fls": []string{"Falls"},
 	"Forg": []string{"Forge"},
 	"Frg": []string{"Forge"},
 	"Ft": []string{"Fort"},
-	"Ft.": []string{"Fort"},
 	"Gdn": []string{"Garden"},
 	"Gr": []string{"Great", "Grand"},
 	"Grv": []string{"Grove"},
+	"Gln": []string{"Glen"},
 	"Hbr": []string{"Harbor"},
+	"Hse": []string{"House"},
 	"Hgts": []string{"Heights"},
 	"Hts": []string{"Heights"},
+	"Is": []string{"Isle", "Island"},
 	"Intl": []string{"International"},
 	"Jct": []string{"Junction"},
 	"Lk": []string{"Lake"},
@@ -126,7 +139,11 @@ var expansions = map[string][]string {
 	"Mtn": []string{"Mountain"},
 	"Pk": []string{"Park"},
 	"Pnt": []string{"Point"},
+	"Pt": []string{"Point"},
+	"Ptr": []string{"Point"},
+	"Prtg": []string{"Portage"},
 	"Prt": []string{"Port"},
+	"Rdg": []string{"Ridge"},
 	"Rpds": []string{"Rapids"},
 	"Rvr": []string{"River"},
 	"Snta": []string{"Santa"},
@@ -135,7 +152,11 @@ var expansions = map[string][]string {
 	"Sprs": []string{"Springs"},
 	"Sta": []string{"Station"},
 	"St": []string{"Saint"},
-	"St.": []string{"Saint"},
+	"Univ": []string{"University"},
+	"Wht": []string{"White"},
+	"Wks": []string{"Works"},
+	"Vly": []string{"Valley"},
+	"Vla": []string{"Villa"},
 }
 
 type CityState struct {
@@ -158,6 +179,11 @@ func StateCode(name string) string {
 	return name
 }
 
+func IsAStateName(name string) bool {
+	_, has := reverseStateMap[name]
+	return has
+}
+
 func StateName(code string) string {
 	if name, has := stateMap[code]; has {
 		return name
@@ -168,18 +194,23 @@ func StateName(code string) string {
 	return code
 }
 
+func Expand(n string) []string {
+	s := strings.TrimRight(n, ".")
+	if l, ok := expansions[s]; ok {
+		return l
+	}
+	return []string{s}
+}
+
 func ExpandCitySpelling(city string) []string {
 	names := strings.Split(ProperName(city), " ")
 	exps := [][]string{[]string{}}
 	for _, n := range names {
-		l, ok := expansions[n]
-		if !ok {
-			l = []string{n}
-		}
+		l := Expand(n)
 		var nexps [][]string
 		for _, r := range l {
-			for _, n := range exps {
-				nexps = append(nexps, append(n, r))
+			for _, e := range exps {
+				nexps = append(nexps, append(e, r))
 			}
 		}
 		exps = nexps
@@ -220,16 +251,8 @@ func GuessCityNames(cs CityState) (l []CityState) {
 	return l
 }
 
-func CorrectCitySpelling(name CityState) (CityState, string, error) {
-	gname, guri, gerr := SearchGoogle(name)
-	if gerr != nil {
-		return name, "", gerr
-	}
-	return gname, guri, nil
-}
-
 func (cs CityState) String() string {
-	return cs.City + ", " + cs.State
+	return cs.City + ", " + StateCode(cs.State)
 }
 
 func (cs CityState) WikiUri() string {
@@ -238,7 +261,7 @@ func (cs CityState) WikiUri() string {
 }
 
 func ParseCityState(s string) (cs CityState) {
-	m := wikiCityStateRe.FindStringSubmatch(s)
+	m := cityStateRe.FindStringSubmatch(s)
 	if len(m) != 0 {
 		cs.City = m[1]
 		cs.State = m[2]

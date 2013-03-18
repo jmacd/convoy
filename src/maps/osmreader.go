@@ -7,11 +7,13 @@ import "errors"
 import "fmt"
 import "io"
 import "io/ioutil"
-import "runtime"
 import "log"
+import "runtime"
+
 import "code.google.com/p/goprotobuf/proto"
 
 import "proto/osm"
+import "geo"
 
 var (
 	numReaderProcs = runtime.NumCPU() - 1
@@ -21,6 +23,7 @@ type Map struct {
 	Nodes map[int64]*Node
 	Ways map[int64]*Way
 	Rels map[int64]*Relation
+	Tree *geo.Tree
 	blockCh chan *osm.Blob
 	graphCh chan *blockData
 	doneCh chan bool
@@ -53,8 +56,7 @@ type Attribute struct {
 
 type Node struct {
 	Id int64
-	Lat float64  // In degrees
-	Lon float64  // In degrees
+	Point [2]geo.ScaledRad  // (Lat, Lon)
 	Attrs []Attribute
 }
 
@@ -81,6 +83,7 @@ func NewMap() *Map {
 		make(map[int64]*Node),
 		make(map[int64]*Way),
 		make(map[int64]*Relation),
+		geo.NewTree(2),
 		make(chan *osm.Blob),
 		make(chan *blockData),
 		make(chan bool),
@@ -125,8 +128,10 @@ func decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, error) {
 		llon += lons[i]
 		n := &nodes[i]
 		n.Id = lid
-		n.Lat = 1e-9 * float64(bp.latOffset + (bp.granularity * llat))
-		n.Lon = 1e-9 * float64(bp.lonOffset + (bp.granularity * llon))
+		n.Point[0] = geo.ScaleDegrees(1e-9 * 
+			float64(bp.latOffset + (bp.granularity * llat)))
+		n.Point[1] = geo.ScaleDegrees(1e-9 * 
+			float64(bp.lonOffset + (bp.granularity * llon)))
 		if kvi < len(kvs) {
 			for kvi < len(kvs) && kvs[kvi] != 0 {
 				n.Attrs = append(n.Attrs, 
@@ -409,10 +414,17 @@ func (m *Map) ReadMap(f io.Reader) error {
 		m.blockCh <- nil
 	}
 	var _ = <- m.doneCh
-	log.Println("Finished processing", nread, "bytes", 
+	log.Println("Finished reading", nread, "bytes", 
 		len(m.Nodes), "nodes",
 		len(m.Ways), "ways",
 		len(m.Rels), "relations")
+	nodes := make([]geo.Node, len(m.Nodes))
+	node_i := 0
+	for _, node := range m.Nodes {
+		nodes[node_i] = node
+		node_i++
+	}
+	m.Tree.Build(nodes)
 	// na := make(map[string]bool)
 	// wa := make(map[string]bool)
 	// ra := make(map[string]bool)
@@ -441,4 +453,8 @@ func (m *Map) ReadMap(f io.Reader) error {
 	// 	fmt.Println("REL ATTR", a)
 	// }
 	return nil
+}
+
+func (n *Node) Coord() []geo.ScaledRad {
+	return n.Point[0:2]
 }
