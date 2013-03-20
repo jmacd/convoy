@@ -34,7 +34,7 @@ func init() {
 }
 
 func SleepAWhile(url, query string) {
-	time.Sleep(time.Second * 5)
+	time.Sleep(time.Second * 2)
 }
 
 func GetUrl(host, uri, query string) ([]byte, error) {

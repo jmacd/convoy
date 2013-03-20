@@ -1,17 +1,23 @@
 package common
 
+import "net/url"
 import "regexp"
 import "strings"
 
 const (
 	WikiHost = "en.wikipedia.org"
-	wikiBaseUri = "/wiki/"
+	WikiBaseUri = "/wiki/"
+	WikiDisambiguationUri = "/wiki/Help:Disambiguation"
 )
 
 var (
-	wikiUrlRe = regexp.MustCompile(
-		`^http://` + WikiHost + wikiBaseUri + `([^#]+)`)
 	cityStateRe = regexp.MustCompile(`(.*), ([^,]+)`)
+	separators = []string{
+		" ",  // Space
+		"–",  // N-dash
+		"—",  // M-dash
+		"―",  // Figure-dash
+	}
 )
 
 // Maps 2-character state codes to full names
@@ -111,9 +117,11 @@ var expansions = map[string][]string {
 	"Blf": []string{"Bluff"},
 	"Ci": []string{"City"},
 	"Cit": []string{"City"},
+	"Ch": []string{"Courthouse"},
 	"Crk": []string{"Creek"},
 	"Ctr": []string{"Center"},
 	"Ct": []string{"Court"},
+	"Cthse": []string{"Courthouse"},
 	"Crt": []string{"Court"},
 	"Cy": []string{"City"},
 	"Depo": []string{"Depot"},
@@ -222,16 +230,23 @@ func ExpandCitySpelling(city string) []string {
 	return res
 }
 
-func ProperName(s string) string {
-	words := strings.Split(s, " ")
+func properNameFunc(in string, seps []string) string {
+	if len(seps) == 0 {
+		return strings.Title(in)
+	}
+	words := strings.Split(in, seps[0])
 	var out []string
 	for _, w := range words {
 		if len(w) == 0 {
 			continue
 		}
-		out = append(out, strings.Title(strings.ToLower(w)))
+		out = append(out, properNameFunc(w, seps[1:]))
 	}
-	return strings.Join(out, " ")
+	return strings.Join(out, seps[0])
+}
+
+func ProperName(s string) string {
+	return properNameFunc(strings.ToLower(s), separators)
 }
 
 func wikiProperName(s string) string {
@@ -240,6 +255,21 @@ func wikiProperName(s string) string {
 
 func unwikiProperName(s string) string {
 	return ProperName(strings.Replace(s, "_", " ", -1))
+}
+
+func WikiUrlToCityState(s string) (CityState, bool) {
+	url, err := url.Parse(s)
+	if err != nil {
+		return CityState{}, false
+	}
+	if !strings.HasPrefix(url.Path, WikiBaseUri) {
+		return CityState{}, false
+	}
+	cs := ParseCityState(unwikiProperName(url.Path[len(WikiBaseUri):]))
+	if IsAStateName(cs.State) {
+		return cs, true
+	}
+	return CityState{}, false
 }
 
 func GuessCityNames(cs CityState) (l []CityState) {
@@ -256,7 +286,7 @@ func (cs CityState) String() string {
 }
 
 func (cs CityState) WikiUri() string {
-	return wikiBaseUri + 
+	return WikiBaseUri + 
 		wikiProperName(cs.City) + ",_" + wikiProperName(cs.State)
 }
 

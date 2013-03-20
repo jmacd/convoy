@@ -30,3 +30,39 @@ func TestExpansion(t *testing.T) {
 		}
 	}
 }
+
+var propExpect = [][2]string {
+	[2]string{"The-intl airport", "The-Intl Airport"},
+	[2]string{"What EVER", "What Ever"},
+	[2]string{"Hartsfield–jackson Atlanta International Airport", 
+		  "Hartsfield–Jackson Atlanta International Airport"},
+}
+
+func TestProper(t *testing.T) {
+	for _, ep := range propExpect {
+		r := ProperName(ep[0])
+		if r != ep[1] {
+			t.Errorf("Bad proper name %q != %q", r, ep[1])
+		} 
+	}
+}
+
+var cityExpect = [][2]string {
+	[2]string{"http://en.wikipedia.org/wiki/Foo,_Wisconsin", "Foo, WI"},
+	[2]string{"/wiki/Bar,_California", "Bar, CA"},
+	[2]string{"/wiki/Place_In_The_Sun", ""},
+	[2]string{"#Foo", ""},
+}
+
+func TestWikiToCity(t *testing.T) {
+	for _, ce := range cityExpect {
+		r, valid := WikiUrlToCityState(ce[0])
+		var e string
+		if valid {
+			e = r.String()
+		}
+		if ce[1] != e {
+			t.Errorf("City URL incorrect: %q %q %q", ce[0], ce[1], e)
+		}
+	}
+}

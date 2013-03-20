@@ -152,18 +152,11 @@ func (cf *CityFinder) hasWikipediaUnknown(uri string) (bool, error) {
 	return hasRows(cf.hasWikiUnkStmt, uri)
 }
 
-func (cf *CityFinder) getLocFromWiki(uri string) (coordinates, error) {
+func (cf *CityFinder) getLocFromWiki(uri string) (coordinates, []byte, error) {
 	var c coordinates
-	hasUnk, err := cf.hasWikipediaUnknown(uri)
-	if err != nil {
-		return c, err
-	}
-	if hasUnk {
-		return c, nil
-	}	
 	xml, err := common.GetUrl(common.WikiHost, uri, "")
 	if err != nil {
-		return c, err
+		return c, nil, err
 	}
 	err = scraper.ParseXml(xml, atom.Span, "class", 
 		func (value string) func (text string) {
@@ -179,11 +172,56 @@ func (cf *CityFinder) getLocFromWiki(uri string) (coordinates, error) {
 		}
 		return nil
 	})
-	if c.lat == 0 || c.long == 0 {
-		_, err = cf.addWikiUnkStmt.Exec(uri)
-		if err != nil {
-			return c, err
+	return c, xml, nil
+}
+
+func (cf *CityFinder) tryLocFromWiki(urip *string, csp *common.CityState, spellDet *string) (coordinates, error) {
+	var c coordinates
+	hasUnk, err := cf.hasWikipediaUnknown(*urip)
+	if err != nil {
+		return c, err
+	}
+	if hasUnk {
+		return c, nil
+	}	
+	c, xml, err := cf.getLocFromWiki(*urip)
+	if err != nil {
+		return c, err
+	}
+	if c.lat != 0 && c.long != 0 {
+		return c, nil
+	}
+	ambiguous := false
+	uris := []string{}
+	err = scraper.ParseXml(xml, atom.A, "href", 
+		func (value string) func (text string) {
+ 			if value == common.WikiDisambiguationUri {
+				ambiguous = true
+			}
+			uris = append(uris, value)
+			return nil
+		})
+	if ambiguous {
+		//log.Println("Ambiguous - Uris", uris)
+		for _, uri := range uris {
+			cs, has := common.WikiUrlToCityState(uri)
+			if has {
+				c, _, err := cf.getLocFromWiki(uri)
+				if err != nil {
+					return c, err
+				}
+				if c.lat != 0 && c.long != 0 {
+					*csp = cs
+					*urip = uri
+					*spellDet = "wiki-ambiguous"
+					return c, nil
+				}
+			}
 		}
+	}
+	_, err = cf.addWikiUnkStmt.Exec(*urip)
+	if err != nil {
+		return c, err
 	}
 	return c, nil
 }
@@ -194,11 +232,10 @@ func (cf *CityFinder) tryFindingCoords(
 	if err != nil {
 		return false, err
 	}
-	spellingStateCode := common.StateCode(spelling.State)
 
 	var c coordinates
 	if !hasLoc {
-		c, err = cf.getLocFromWiki(wikiUri)
+		c, err = cf.tryLocFromWiki(&wikiUri, &spelling, &spellDet)
 		if err != nil {
 			return false, err
 		}
@@ -207,7 +244,13 @@ func (cf *CityFinder) tryFindingCoords(
 				spelling, wikiUri)
 			return false, nil
 		}
+		// "spelling" may have changed, updated hasLoc
+		hasLoc, err = cf.hasLocation(spelling)
+		if err != nil {
+			return false, err
+		}
 	}
+	spellingStateCode := common.StateCode(spelling.State)
 	if missing.City != spelling.City || missing.State != spellingStateCode {
  		hasCor, err := cf.hasCorrection(missing)
 		if err != nil {

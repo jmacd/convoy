@@ -9,6 +9,7 @@ import "io"
 import "io/ioutil"
 import "log"
 import "runtime"
+import "time"
 
 import "code.google.com/p/goprotobuf/proto"
 
@@ -83,7 +84,7 @@ func NewMap() *Map {
 		make(map[int64]*Node),
 		make(map[int64]*Way),
 		make(map[int64]*Relation),
-		geo.NewTree(2),
+		geo.NewTree(),
 		make(chan *osm.Blob),
 		make(chan *blockData),
 		make(chan bool),
@@ -425,6 +426,8 @@ func (m *Map) ReadMap(f io.Reader) error {
 		node_i++
 	}
 	m.Tree.Build(nodes)
+	log.Println("Finished sorting")
+	time.Sleep(time.Second * 1000)
 	// na := make(map[string]bool)
 	// wa := make(map[string]bool)
 	// ra := make(map[string]bool)
@@ -456,5 +459,5 @@ func (m *Map) ReadMap(f io.Reader) error {
 }
 
 func (n *Node) Coord() []geo.ScaledRad {
-	return n.Point[0:2]
+	return n.Point[:]
 }

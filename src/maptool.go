@@ -20,6 +20,7 @@ func main() {
 	if err != nil {
 		log.Fatalln("Could not open file:", *input, ":", err)
 	}
+	log.Println("Reading", *input)
 	osm := maps.NewMap()
 	if err = osm.ReadMap(file); err != nil {
 		log.Fatalln("Error reading map:", *input, ":", err)

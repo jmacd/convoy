@@ -54,7 +54,10 @@ $(BINDIR)/maptool: $(MFILES)
 $(BINDIR)/geotool: $(GFILES)
 	go build -o $(BINDIR)/geotool geotool.go
 
-test: test_common
+test: test_common test_geo
 
 test_common:
 	go test common
+
+test_geo:
+	go test geo
