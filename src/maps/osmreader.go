@@ -59,6 +59,7 @@ type Node struct {
 	Id int64
 	Point [2]geo.ScaledRad  // (Lat, Lon)
 	Attrs []Attribute
+	treeLeft, treeRight *Node       // K-D tree pointers
 }
 
 type Way struct {
@@ -419,14 +420,14 @@ func (m *Map) ReadMap(f io.Reader) error {
 		len(m.Nodes), "nodes",
 		len(m.Ways), "ways",
 		len(m.Rels), "relations")
-	nodes := make([]geo.Node, len(m.Nodes))
+	nodes := make([]geo.Vertex, len(m.Nodes))
 	node_i := 0
 	for _, node := range m.Nodes {
 		nodes[node_i] = node
 		node_i++
 	}
 	m.Tree.Build(nodes)
-	log.Println("Finished sorting")
+	log.Println("Finished building tree")
 	time.Sleep(time.Second * 1000)
 	// na := make(map[string]bool)
 	// wa := make(map[string]bool)
@@ -460,4 +461,24 @@ func (m *Map) ReadMap(f io.Reader) error {
 
 func (n *Node) Coord() []geo.ScaledRad {
 	return n.Point[:]
+}
+
+func (n *Node) String() string {
+	return fmt.Sprintf("[id=%u (%.3f,%.3f)]", n.Id, n.Point[0], n.Point[1])
+}
+
+func (n *Node) Left() geo.Vertex {
+	return n.treeLeft
+}
+
+func (n *Node) Right() geo.Vertex {
+	return n.treeRight
+}
+
+func (n *Node) SetLeft(l geo.Vertex) {
+	n.treeLeft = l.(*Node)
+}
+
+func (n *Node) SetRight(r geo.Vertex) {
+	n.treeRight = r.(*Node)
 }

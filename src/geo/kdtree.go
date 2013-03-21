@@ -2,53 +2,59 @@ package geo
 
 import "runtime"
 import "sort"
+import "log"
+
+const (
+	seqSortLimit = 100000
+)
+
+type Vertices []Vertex
 
 // Tree is a K-D Tree with K=2
 type Tree struct {
-	arrays [3][]Node
+	root Vertex
 }
 
-type Node interface {
+type Vertex interface {
 	Coord() []ScaledRad
+	String() string
+	Left() Vertex
+	Right() Vertex
+	SetLeft(Vertex)
+	SetRight(Vertex)
 }
 
 func NewTree() *Tree {
 	return &Tree{}
 }
 
-const (
-	seqSortLimit = 100000
-)
-
-type Nodes []Node
-
-func (n Nodes) Len() int { return len(n) }
-func (n Nodes) Swap(i, j int) { n[i], n[j] = n[j], n[i] }
-
-type byX struct { Nodes }
-type byY struct { Nodes }
-
-func (bx byX) Less(i, j int) bool { 
-	return bx.Nodes[i].Coord()[0] < bx.Nodes[j].Coord()[0] 
-}
-func (by byY) Less(i, j int) bool { 
-	return by.Nodes[i].Coord()[1] < by.Nodes[j].Coord()[1] 
-}
+func (n Vertices) Len() int { return len(n) }
+func (n Vertices) Swap(i, j int) { n[i], n[j] = n[j], n[i] }
 
 type sorter interface {
-	Interface(n Nodes) sort.Interface
-	Less(n1, n2 Node) bool
+	Interface(n Vertices) sort.Interface
+	Less(n1, n2 Vertex) bool
 }
 
 type sortByX struct {}
 type sortByY struct {}
 
-func (sortByX) Interface(n Nodes) sort.Interface { return byX{n} }
-func (sortByY) Interface(n Nodes) sort.Interface { return byY{n} }
-func (sortByX) Less(n0, n1 Node) bool { return n0.Coord()[0] < n1.Coord()[0] }
-func (sortByY) Less(n0, n1 Node) bool { return n0.Coord()[1] < n1.Coord()[1] }
+type byX struct { Vertices }
+type byY struct { Vertices }
 
-func mergeSort(output, input Nodes, s sorter,
+func (bx byX) Less(i, j int) bool { 
+	return bx.Vertices[i].Coord()[0] < bx.Vertices[j].Coord()[0] 
+}
+func (by byY) Less(i, j int) bool { 
+	return by.Vertices[i].Coord()[1] < by.Vertices[j].Coord()[1] 
+}
+
+func (sortByX) Interface(n Vertices) sort.Interface { return byX{n} }
+func (sortByY) Interface(n Vertices) sort.Interface { return byY{n} }
+func (sortByX) Less(n0, n1 Vertex) bool { return n0.Coord()[0] < n1.Coord()[0] }
+func (sortByY) Less(n0, n1 Vertex) bool { return n0.Coord()[1] < n1.Coord()[1] }
+
+func mergeSort(output, input Vertices, s sorter,
 	running chan bool, done chan<- bool) {
 	if len(input) < seqSortLimit {
 		copy(output, input)
@@ -71,7 +77,7 @@ func mergeSort(output, input Nodes, s sorter,
 	done <- true
 }
 
-func merge(out, in0, in1 Nodes, s sorter) {
+func merge(out, in0, in1 Vertices, s sorter) {
 	i, j, k := 0, 0, 0
 	for ; i < len(in0) && j < len(in1); k++ {
 		if s.Less(in0[i], in1[j]) {
@@ -89,23 +95,83 @@ func merge(out, in0, in1 Nodes, s sorter) {
 	}
 }
 
-func concurrentSort(input Nodes, s sorter) Nodes {
+func concurrentSort(input Vertices, s sorter) Vertices {
 	procs := runtime.GOMAXPROCS(0)
 	running := make(chan bool, procs)
-	output := make(Nodes, len(input))
+	output := make(Vertices, len(input))
 	done := make(chan bool, 1)
 	mergeSort(output, input, s, running, done)
 	<- done
 	return output
 }
 
-func (t *Tree) Build(nodes []Node) {
-	t.arrays[0] = make(Nodes, len(nodes))
-	t.arrays[1] = make(Nodes, len(nodes))
-	for i, node := range nodes {
-		t.arrays[0][i] = node
-		t.arrays[1][i] = node
+func (t *Tree) Build(graph []Vertex) {
+	xdim := make(Vertices, len(graph))
+	ydim := make(Vertices, len(graph))
+	for i, v := range graph {
+		xdim[i] = v
+		ydim[i] = v
 	}
-	t.arrays[0] = concurrentSort(t.arrays[0], sortByX{})
-	t.arrays[1] = concurrentSort(t.arrays[1], sortByY{})
+	xdim = concurrentSort(xdim, sortByX{})
+	ydim = concurrentSort(ydim, sortByY{})
+	log.Println("Sort finished")
+	tmp := make(Vertices, len(graph))
+	t.root = t.buildTree(xdim, ydim, tmp, sortByX{}, sortByY{})
+}
+
+// findMidpoint ensures that the midpoint is a true split, i.e., it is
+// a lower bound of some point in this dimension.
+func findMidpoint(dim Vertices, s sorter) int {
+	mid := (len(dim) + 1) / 2 - 1
+	for mid > 0 {
+		if !s.Less(dim[mid-1], dim[mid]) {
+			mid--
+		} else {
+			break
+		}
+	}
+	return mid
+}
+
+func (t *Tree) buildTree(thisDim, nextDim, tmpDim Vertices, 
+	thisSort, nextSort sorter) Vertex {
+	if len(thisDim) == 0 {
+		return nil
+	}
+	// Choose the median point in thisDim TODO(jmacd) pay
+	// attention to finding a true lower bound in case of
+	// duplicate values
+	mid := findMidpoint(thisDim, thisSort)
+	split := thisDim[mid]
+
+	thisLeft, splitLeft := thisDim[0:mid], tmpDim[0:mid]
+	thisRight, splitRight := thisDim[mid+1:], tmpDim[mid+1:]
+
+	// Split nextDim into two halves in this plane
+	for i, l, r := 0, 0, 0; i < len(thisDim); i++ {
+		p := nextDim[i]
+		if p == split { 
+			continue 
+		}
+		if thisSort.Less(p, split) {
+			splitLeft[l] = p
+			l++
+		} else {
+			splitRight[r] = p
+			r++
+		}
+	}
+	tmpLeft := nextDim[0:mid]
+	tmpRight := nextDim[mid+1:]
+	leftChild := t.buildTree(splitLeft, thisLeft, tmpLeft, 
+		nextSort, thisSort)
+	rightChild := t.buildTree(splitRight, thisRight, tmpRight, 
+		nextSort, thisSort)
+	if leftChild != nil {
+		split.SetLeft(leftChild)
+	}
+	if rightChild != nil {
+		split.SetRight(rightChild)
+	}
+	return split
 }

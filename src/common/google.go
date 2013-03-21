@@ -30,7 +30,8 @@ var stripSiteRe = regexp.MustCompile(`(.*) site:.*`)
 func CorrectCitySpelling(name CityState) (CityState, string, string, error) {
 	spaceState := " " + name.State
 	query := name.City + spaceState + " site:" + WikiHost
-	googQuery := "?q=" + url.QueryEscape(query) + "&cx=" + googleCx + "&key=" + googleKey + "&hl=en"
+	googQuery := "?q=" + url.QueryEscape(query) + "&cx=" + 
+		googleCx + "&key=" + googleKey + "&hl=en"
  	googXml, err := GetSecureUrl(googleHost, googleBaseUri, googQuery)
  	if err != nil {
 		return CityState{}, "", "", nil
