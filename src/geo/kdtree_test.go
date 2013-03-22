@@ -2,7 +2,6 @@ package geo
 
 import "testing"
 import "fmt"
-import "log"
 import "math"
 import "math/rand"
 import "runtime"
@@ -16,7 +15,7 @@ func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
 }
 
-func (tn *testNode) Coord() []ScaledRad {
+func (tn *testNode) Point() Coords {
 	return tn.coord[:]
 }
 
@@ -43,20 +42,20 @@ func (n *testNode) SetRight(r Vertex) {
 func checkSorted(nodeX, nodeY Vertices, t *testing.T) bool {
 	x, y := ScaledRad(math.MinInt32), ScaledRad(math.MinInt32)
 	for i, _ := range nodeX {
-		if x > nodeX[i].Coord()[0] {
+		if x > nodeX[i].Point()[0] {
 			return false
 		}
-		if y > nodeY[i].Coord()[1] {
+		if y > nodeY[i].Point()[1] {
 			return false
 		}
-		x = nodeX[i].Coord()[0]
-		y = nodeY[i].Coord()[1]
+		x = nodeX[i].Point()[0]
+		y = nodeY[i].Point()[1]
 	}
 	return true
 }
 
 func TestMergeSort(t *testing.T) {
-	const N = seqSortLimit * 3
+	const N = conSizeLimit * 3
 	nodeX := make(Vertices, N)
 	nodeY := make(Vertices, N)
 	for i, _ := range nodeX {
@@ -88,8 +87,13 @@ func TestTree(t *testing.T) {
 		testPoint(4, 7),
 		testPoint(7, 2),
 		testPoint(8, 1),
-		testPoint(9, 6),		
+		testPoint(9, 6),
 	}
 	tree.Build(g)
-	log.Println("Tree:", t)
+	for _, v := range g {
+		f := tree.FindExact(v.Point())
+		if v != f {
+			t.Errorf("Found %v not %v", f, v)
+		}
+	}
 }

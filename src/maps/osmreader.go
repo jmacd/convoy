@@ -57,7 +57,7 @@ type Attribute struct {
 
 type Node struct {
 	Id int64
-	Point [2]geo.ScaledRad  // (Lat, Lon)
+	coords [2]geo.ScaledRad  // (Lat, Lon)
 	Attrs []Attribute
 	treeLeft, treeRight *Node       // K-D tree pointers
 }
@@ -130,9 +130,9 @@ func decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, error) {
 		llon += lons[i]
 		n := &nodes[i]
 		n.Id = lid
-		n.Point[0] = geo.ScaleDegrees(1e-9 * 
+		n.coords[0] = geo.ScaleDegrees(1e-9 * 
 			float64(bp.latOffset + (bp.granularity * llat)))
-		n.Point[1] = geo.ScaleDegrees(1e-9 * 
+		n.coords[1] = geo.ScaleDegrees(1e-9 * 
 			float64(bp.lonOffset + (bp.granularity * llon)))
 		if kvi < len(kvs) {
 			for kvi < len(kvs) && kvs[kvi] != 0 {
@@ -459,12 +459,12 @@ func (m *Map) ReadMap(f io.Reader) error {
 	return nil
 }
 
-func (n *Node) Coord() []geo.ScaledRad {
-	return n.Point[:]
+func (n *Node) Point() geo.Coords {
+	return n.coords[:]
 }
 
 func (n *Node) String() string {
-	return fmt.Sprintf("[id=%u (%.3f,%.3f)]", n.Id, n.Point[0], n.Point[1])
+	return fmt.Sprintf("[id=%u (%.3f,%.3f)]", n.Id, n.coords[0], n.coords[1])
 }
 
 func (n *Node) Left() geo.Vertex {
@@ -476,9 +476,13 @@ func (n *Node) Right() geo.Vertex {
 }
 
 func (n *Node) SetLeft(l geo.Vertex) {
-	n.treeLeft = l.(*Node)
+	if l != nil {
+		n.treeLeft = l.(*Node)
+	}
 }
 
 func (n *Node) SetRight(r geo.Vertex) {
-	n.treeRight = r.(*Node)
+	if r != nil {
+		n.treeRight = r.(*Node)
+	}
 }

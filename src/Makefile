@@ -16,6 +16,7 @@ CFILES = \
 	scraper/scrape.go
 
 MFILES = \
+	common/cncrntzr.go \
 	maptool.go \
 	maps/osmreader.go \
 	geo/kdtree.go \
@@ -57,7 +58,9 @@ $(BINDIR)/geotool: $(GFILES)
 test: test_common test_geo
 
 test_common:
+	go test -i common
 	go test common
 
 test_geo:
+	go test -i geo
 	go test geo
