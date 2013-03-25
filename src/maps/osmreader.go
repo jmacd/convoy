@@ -9,7 +9,6 @@ import "io"
 import "io/ioutil"
 import "log"
 import "runtime"
-import "time"
 
 import "code.google.com/p/goprotobuf/proto"
 
@@ -55,16 +54,18 @@ type Attribute struct {
 	Key, Value string
 }
 
+type Attributes []Attribute
+
 type Node struct {
 	Id int64
-	coords [2]geo.ScaledRad  // (Lat, Lon)
-	Attrs []Attribute
-	treeLeft, treeRight *Node       // K-D tree pointers
+	coords [3]geo.EarthLoc  // (X, Y, Z)
+	treeLeft, treeRight *Node  // K-D tree pointers
+	Attrs Attributes
 }
 
 type Way struct {
 	Id int64
-	Attrs []Attribute
+	Attrs Attributes
 	Refs []int64
 }
 
@@ -76,7 +77,7 @@ type RelEntry struct {
 
 type Relation struct {
 	Id int64
-	Attrs []Attribute
+	Attrs Attributes
 	Ents []RelEntry
 }
 
@@ -107,6 +108,18 @@ func readFixed(f io.Reader, s int32) ([]byte, error) {
 	return buf, nil
 }
 
+func keepNodeAttr(key string) bool {
+	return true // false
+}
+
+func keepWayAttr(key string) bool {
+	return true // key == "highway"
+}
+
+func keepRelAttr(key string) bool {
+	return true // false
+}
+
 func decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, error) {
 	ids := dn.GetId()
 	lats := dn.GetLat()
@@ -130,26 +143,32 @@ func decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, error) {
 		llon += lons[i]
 		n := &nodes[i]
 		n.Id = lid
-		n.coords[0] = geo.ScaleDegrees(1e-9 * 
-			float64(bp.latOffset + (bp.granularity * llat)))
-		n.coords[1] = geo.ScaleDegrees(1e-9 * 
-			float64(bp.lonOffset + (bp.granularity * llon)))
+		geo.LatLongDegreesToCoords(
+			1e-9 * float64(bp.latOffset + (bp.granularity * llat)),
+			1e-9 * float64(bp.lonOffset + (bp.granularity * llon)),
+			n.coords[:])
+		attrs := Attributes{}
 		if kvi < len(kvs) {
 			for kvi < len(kvs) && kvs[kvi] != 0 {
-				n.Attrs = append(n.Attrs, 
-					Attribute{string(bp.strings[kvs[kvi]]), 
-					          string(bp.strings[kvs[kvi+1]])})
+				key := string(bp.strings[kvs[kvi]])
+				if keepNodeAttr(key) {
+					value := string(bp.strings[kvs[kvi+1]])
+					attrs = append(attrs,
+						Attribute{key, value})
+				}
 				kvi += 2
 			}
 			kvi++
 		}
+		n.Attrs = make(Attributes, len(attrs))
+		copy(n.Attrs, attrs)
 	}
 	return nodes, nil
 }
 
 func decodeWay(pway *osm.Way, way *Way, bp *blockParams) error {
 	way.Id = pway.GetId()
-	way.Attrs = decodeAttrs(pway.GetKeys(), pway.GetVals(), bp)
+	way.Attrs = decodeAttrs(pway.GetKeys(), pway.GetVals(), bp, keepWayAttr)
 	way.Refs = make([]int64, len(pway.GetRefs()))
 	var lref int64
 	for i, dref := range pway.GetRefs() {
@@ -159,18 +178,27 @@ func decodeWay(pway *osm.Way, way *Way, bp *blockParams) error {
 	return nil
 }
 
-func decodeAttrs(keys, vals []uint32, bp *blockParams) []Attribute {
-	attrs := make([]Attribute, len(keys))
+func decodeAttrs(keys, vals []uint32, bp *blockParams, 
+	keep func (string) bool) Attributes {
+	attrs := Attributes{}
 	for i := 0; i < len(keys); i++ {
-		attrs[i].Key = string(bp.strings[keys[i]])
-		attrs[i].Value = string(bp.strings[vals[i]])
+		key := string(bp.strings[keys[i]])
+		if keep(key) {
+			value := string(bp.strings[vals[i]])
+			attrs = append(attrs, Attribute{key, value})
+		}
 	}
-	return attrs
+	if len(attrs) == 0 {
+		return nil
+	}
+	res := make(Attributes, len(attrs))
+	copy(res, attrs)
+	return res
 }
 
 func decodeRelation(prel *osm.Relation, rel *Relation, bp *blockParams) error {
 	rel.Id = prel.GetId()
-	rel.Attrs = decodeAttrs(prel.GetKeys(), prel.GetVals(), bp)
+	rel.Attrs = decodeAttrs(prel.GetKeys(), prel.GetVals(), bp, keepRelAttr)
 	rel.Ents = make([]RelEntry, len(prel.GetMemids()))
 	var lmemid int64
 	for i, dmemid := range prel.GetMemids() {
@@ -427,36 +455,43 @@ func (m *Map) ReadMap(f io.Reader) error {
 		node_i++
 	}
 	m.Tree.Build(nodes)
-	log.Println("Finished building tree")
-	time.Sleep(time.Second * 1000)
-	// na := make(map[string]bool)
-	// wa := make(map[string]bool)
-	// ra := make(map[string]bool)
-	// fu := func(s map[string]bool, as []Attribute) {
-	// 	for _, a := range as {
-	// 		ck := a.Key + "=" + a.Value
-	// 		s[ck] = true
-	// 	}
-	// }
-	// for _, n := range m.Nodes {
-	// 	fu(na, n.Attrs)
-	// }
-	// for _, w := range m.Ways {
-	// 	fu(wa, w.Attrs)
-	// }
-	// for _, r := range m.Rels {
-	// 	fu(ra, r.Attrs)
-	// }
-	// for a, _ := range na {
-	// 	fmt.Println("NODE ATTR", a)
-	// }
-	// for a, _ := range wa {
-	// 	fmt.Println("WAY ATTR", a)
-	// }
-	// for a, _ := range ra {
-	// 	fmt.Println("REL ATTR", a)
-	// }
+
+	// m.PrintAttrs()
+	var ms runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&ms)
+	log.Println("Finished building kdtree, %d bytes in use", ms.Alloc)
 	return nil
+}
+
+func (m *Map) PrintAttrs() {
+	na := make(map[string]int)
+	wa := make(map[string]int)
+	ra := make(map[string]int)
+	fu := func(s map[string]int, as Attributes) {
+		for _, a := range as {
+			ck := a.Key + "=" + a.Value
+			s[ck] += 1 
+		}
+	}
+	for _, n := range m.Nodes {
+		fu(na, n.Attrs)
+	}
+	for _, w := range m.Ways {
+		fu(wa, w.Attrs)
+	}
+	for _, r := range m.Rels {
+		fu(ra, r.Attrs)
+	}
+	for a, c := range na {
+		fmt.Printf("NODE ATTR %s (%d)", a, c)
+	}
+	for a, c := range wa {
+		fmt.Printf("WAY ATTR %s (%c)", a, c)
+	}
+	for a, c := range ra {
+		fmt.Printf("REL ATTR %s (%c)", a, c)
+	}
 }
 
 func (n *Node) Point() geo.Coords {

@@ -7,7 +7,7 @@ import "math/rand"
 import "runtime"
 
 type testNode struct {
-	coord [2]ScaledRad
+	coord [3]EarthLoc
 	left, right Vertex
 }
 
@@ -20,7 +20,8 @@ func (tn *testNode) Point() Coords {
 }
 
 func (tn *testNode) String() string {
-	return fmt.Sprintf("(%v,%v)", tn.coord[0], tn.coord[1])
+	return fmt.Sprintf("(%v,%v,%v)", 
+		tn.coord[0], tn.coord[1], tn.coord[2])
 }
 
 func (n *testNode) Left() Vertex {
@@ -39,8 +40,10 @@ func (n *testNode) SetRight(r Vertex) {
 	n.right = r
 }
 
-func checkSorted(nodeX, nodeY Vertices, t *testing.T) bool {
-	x, y := ScaledRad(math.MinInt32), ScaledRad(math.MinInt32)
+func checkSorted(nodeX, nodeY, nodeZ Vertices, t *testing.T) bool {
+	x, y, z := EarthLoc(math.MinInt32),
+		EarthLoc(math.MinInt32),
+		EarthLoc(math.MinInt32)
 	for i, _ := range nodeX {
 		if x > nodeX[i].Point()[0] {
 			return false
@@ -48,8 +51,12 @@ func checkSorted(nodeX, nodeY Vertices, t *testing.T) bool {
 		if y > nodeY[i].Point()[1] {
 			return false
 		}
+		if z > nodeZ[i].Point()[2] {
+			return false
+		}
 		x = nodeX[i].Point()[0]
 		y = nodeY[i].Point()[1]
+		z = nodeZ[i].Point()[2]
 	}
 	return true
 }
@@ -58,36 +65,45 @@ func TestMergeSort(t *testing.T) {
 	const N = conSizeLimit * 3
 	nodeX := make(Vertices, N)
 	nodeY := make(Vertices, N)
+	nodeZ := make(Vertices, N)
 	for i, _ := range nodeX {
 		tn := &testNode{}
-		tn.coord[0] = ScaledRad(rand.Int31())
-		tn.coord[1] = ScaledRad(rand.Int31())
+		tn.coord[0] = EarthLoc(rand.Int31())
+		tn.coord[1] = EarthLoc(rand.Int31())
+		tn.coord[2] = EarthLoc(rand.Int31())
 		nodeX[i] = tn
 		nodeY[i] = tn
+		nodeZ[i] = tn
 	}
-	if checkSorted(nodeX, nodeY, t) {
+	if checkSorted(nodeX, nodeY, nodeZ, t) {
 		t.Errorf("Improbable sorted inputs!")
 	}
 	nodeX = concurrentSort(nodeX, sortByX{})
 	nodeY = concurrentSort(nodeY, sortByY{})
-	if !checkSorted(nodeX, nodeY, t) {
+	nodeZ = concurrentSort(nodeZ, sortByZ{})
+	if !checkSorted(nodeX, nodeY, nodeZ, t) {
 		t.Errorf("Non-sorted outputs!")
 	}
 }
 
-func testPoint(x, y int) Vertex {
-	return &testNode{[...]ScaledRad{ScaledRad(x),ScaledRad(y)}, nil, nil}
+func testCoords(x, y, z int32) Coords {
+	return []EarthLoc{EarthLoc(x), EarthLoc(y), EarthLoc(z)}
+}
+func testPoint(x, y, z int32) Vertex {
+	tn := &testNode{}
+	copy(tn.coord[:], testCoords(x, y, z))
+	return tn
 }
 
 func TestTree(t *testing.T) {
 	tree := NewTree()
 	g := []Vertex{
-		testPoint(2, 3),
-		testPoint(5, 4),
-		testPoint(4, 7),
-		testPoint(7, 2),
-		testPoint(8, 1),
-		testPoint(9, 6),
+		testPoint(2, 3, 5),
+		testPoint(5, 4, 4),
+		testPoint(4, 7, 6),
+		testPoint(7, 2, 3),
+		testPoint(8, 1, 2),
+		testPoint(9, 6, 1),
 	}
 	tree.Build(g)
 	for _, v := range g {
@@ -95,5 +111,10 @@ func TestTree(t *testing.T) {
 		if v != f {
 			t.Errorf("Found %v not %v", f, v)
 		}
+	}
+	origin := testCoords(0, 0, 0)
+	near := tree.FindNearest(origin)
+	if !near.Point().Equals(testCoords(2, 3, 5)) {
+		t.Errorf("Nearest point failed: %s", near)
 	}
 }

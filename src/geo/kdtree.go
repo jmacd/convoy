@@ -1,7 +1,6 @@
 package geo
 
 import "sort"
-import "log"
 
 import "common"
 
@@ -11,7 +10,7 @@ const (
 
 type Vertices []Vertex
 
-// Tree is a K-D Tree with K=2
+// Tree is a K-D Tree with K=3
 type Tree struct {
 	root Vertex
 }
@@ -35,13 +34,19 @@ func (n Vertices) Swap(i, j int) { n[i], n[j] = n[j], n[i] }
 type sorter interface {
 	Interface(n Vertices) sort.Interface
 	Less(c0, c1 Coords) bool
+	Value(c0 Coords) EarthLoc
+	String() string
 }
 
 type sortByX struct {}
 type sortByY struct {}
+type sortByZ struct {}
+
+var xyzSorters = []sorter{sortByX{}, sortByY{}, sortByZ{}}
 
 type byX struct { Vertices }
 type byY struct { Vertices }
+type byZ struct { Vertices }
 
 func (bx byX) Less(i, j int) bool { 
 	return bx.Vertices[i].Point()[0] < bx.Vertices[j].Point()[0] 
@@ -49,17 +54,34 @@ func (bx byX) Less(i, j int) bool {
 func (by byY) Less(i, j int) bool { 
 	return by.Vertices[i].Point()[1] < by.Vertices[j].Point()[1] 
 }
+func (by byZ) Less(i, j int) bool { 
+	return by.Vertices[i].Point()[2] < by.Vertices[j].Point()[2] 
+}
 
 func (sortByX) Interface(n Vertices) sort.Interface { return byX{n} }
 func (sortByY) Interface(n Vertices) sort.Interface { return byY{n} }
+func (sortByZ) Interface(n Vertices) sort.Interface { return byZ{n} }
+
 func (sortByX) Less(c0, c1 Coords) bool { 
 	return c0[0] < c1[0] 
 }
 func (sortByY) Less(c0, c1 Coords) bool { 
 	return c0[1] < c1[1] 
 }
+func (sortByZ) Less(c0, c1 Coords) bool { 
+	return c0[2] < c1[2] 
+}
 
-func mergeSort(output, input Vertices, s sorter, con *common.Concurrentizer) {
+func (sortByX) Value(c Coords) EarthLoc { return c[0] }
+func (sortByY) Value(c Coords) EarthLoc { return c[1] }
+func (sortByZ) Value(c Coords) EarthLoc { return c[2] }
+
+func (sortByX) String() string { return "X" }
+func (sortByY) String() string { return "Y" }
+func (sortByZ) String() string { return "Z" }
+
+func mergeSort(output, input Vertices, 
+	s sorter, con *common.Concurrentizer) {
 	if len(input) < conSizeLimit {
 		copy(output, input)
 		sort.Sort(s.Interface(output))
@@ -110,25 +132,27 @@ func concurrentSort(input Vertices, s sorter) Vertices {
 func (t *Tree) Build(graph []Vertex) {
 	xdim := make(Vertices, len(graph))
 	ydim := make(Vertices, len(graph))
+	zdim := make(Vertices, len(graph))
 	for i, v := range graph {
 		xdim[i] = v
 		ydim[i] = v
+		zdim[i] = v
 	}
 	xdim = concurrentSort(xdim, sortByX{})
 	ydim = concurrentSort(ydim, sortByY{})
-	log.Println("Sort finished")
+	zdim = concurrentSort(zdim, sortByZ{})
 	tmp := make(Vertices, len(graph))
 	con := common.NewConcurrentizer(conSizeLimit)
 	con.Do(len(graph), func() {
-		t.root = buildTree(xdim, ydim, tmp, sortByX{}, sortByY{}, con)
+		t.root = buildTree(xdim, ydim, zdim, tmp,
+			sortByX{}, sortByY{}, sortByZ{}, con)
 	}).Wait()
 }
 
 func (t *Tree) FindExact(point Coords) Vertex {
-	sorts := []sorter{sortByX{}, sortByY{}}
 	v := t.root
 	for d := 0; ; d++ {
-		s := sorts[d%2]
+		s := xyzSorters[d%3]
 		if point.Equals(v.Point()) {
 			return v
 		}
@@ -141,9 +165,9 @@ func (t *Tree) FindExact(point Coords) Vertex {
 	return nil
 }
 
-// findMidpoint ensures that the midpoint is a true split, i.e., it is
+// findMedian ensures that the midpoint is a true split, i.e., it is
 // a lower bound of some point in this dimension.
-func findMidpoint(dim Vertices, s sorter) int {
+func findMedian(dim Vertices, s sorter) int {
 	mid := (len(dim) + 1) / 2 - 1
 	for mid > 0 {
 		if !s.Less(dim[mid-1].Point(), dim[mid].Point()) {
@@ -155,45 +179,99 @@ func findMidpoint(dim Vertices, s sorter) int {
 	return mid
 }
 
-func buildTree(
-	thisDim, nextDim, tmpDim Vertices, 
-	thisSort, nextSort sorter,
+// Note: avoid passing dimN and sortN as slices because that 
+// causes them to escape and allocate a lot of memory.
+func buildTree(dim0, dim1, dim2, dimt Vertices, 
+	sort0, sort1, sort2 sorter, 
 	con *common.Concurrentizer) Vertex {
-	if len(thisDim) == 0 {
+	if len(dim0) == 0 {
 		return nil
 	} 
-	// Choose the median point in thisDim.
-	mid := findMidpoint(thisDim, thisSort)
-	split := thisDim[mid]
+	// Choose the median point in dim0.
+	mid := findMedian(dim0, sort0)
+	split := dim0[mid]
 
-	thisLeft, splitLeft := thisDim[0:mid], tmpDim[0:mid]
-	thisRight, splitRight := thisDim[mid+1:], tmpDim[mid+1:]
+	nextLeft := []Vertices{nil, nil, dim0[0:mid]}
+	nextRight := []Vertices{nil, nil, dim0[mid+1:]}
+	dims := []Vertices{dim0, dim1, dim2}
 
-	// Split nextDim into two halves in this plane
-	for i, l, r := 0, 0, 0; i < len(thisDim); i++ {
-		p := nextDim[i]
-		if p == split { 
-			continue 
+	tmpLeft := dimt[0:mid]
+	tmpRight := dimt[mid+1:]
+
+	for s := 1; s < len(dims); s++ {
+		beingSplit := dims[s]
+
+		// Split dims[s] into two halves in this plane
+		for i, l, r := 0, 0, 0; i < len(dim0); i++ {
+			p := beingSplit[i]
+			if p == split { 
+				continue 
+			}
+			if sort0.Less(p.Point(), split.Point()) {
+				tmpLeft[l] = p
+				l++
+			} else {
+				tmpRight[r] = p
+				r++
+			}
 		}
-		if thisSort.Less(p.Point(), split.Point()) {
-			splitLeft[l] = p
-			l++
-		} else {
-			splitRight[r] = p
-			r++
-		}
+		nextLeft[s-1] = tmpLeft
+		nextRight[s-1] = tmpRight
+		tmpLeft = beingSplit[0:mid]
+		tmpRight = beingSplit[mid+1:]
 	}
-	tmpLeft := nextDim[0:mid]
-	tmpRight := nextDim[mid+1:]
-	lh := con.Do(len(splitLeft), func () {
-		split.SetLeft(buildTree(splitLeft, thisLeft, tmpLeft,
-			nextSort, thisSort, con))
+
+	lh := con.Do(len(tmpLeft), func () {
+		split.SetLeft(buildTree(nextLeft[0], nextLeft[1], nextLeft[2],
+			tmpLeft, sort1, sort2, sort0, con))
 	})
-	rh := con.Do(len(splitRight), func() {
-		split.SetRight(buildTree(splitRight, thisRight, tmpRight,
-			nextSort, thisSort, con))
+	rh := con.Do(len(tmpRight), func() {
+		split.SetRight(buildTree(nextRight[0], nextRight[1], nextRight[2], 
+			tmpRight, sort1, sort2, sort0, con))
 	})
 	lh.Wait()
 	rh.Wait()
 	return split
+}
+
+func (t *Tree) FindNearest(point Coords) Vertex {
+	node, _ := findNearestPoint(point, t.root,
+		sortByX{}, sortByY{}, sortByZ{})
+	return node
+}
+
+func findNearestPoint(point Coords, node Vertex,
+	sort0, sort1, sort2 sorter) (Vertex, compDistance) {
+	lc := node.Left()
+	rc := node.Right()
+	np := node.Point()
+	pd := comparableDistance(point, np)
+	if lc == nil && rc == nil {
+		return node, pd
+	}
+	lessThan := sort0.Less(point, np)
+	var closer, farther Vertex
+	if lessThan {
+		closer, farther = lc, rc
+	} else {
+		closer, farther = rc, lc
+	}
+	var nearest Vertex
+	bisectDistance, distance := infiniteDistance, infiniteDistance
+	if closer != nil {
+		nearest, distance = findNearestPoint(point, closer, sort1, sort2, sort0)
+		bisectDistance =
+			square(sort0.Value(nearest.Point()) - sort0.Value(point))
+	}
+	// TODO(jmacd) Feels like this should be > half of the time
+	if farther != nil && distance >= bisectDistance {
+		fnear, fdist := findNearestPoint(point, farther, sort1, sort2, sort0)
+		if fdist < distance {
+			nearest, distance = fnear, fdist
+		}
+	}
+	if pd < distance {
+		nearest, distance = node, pd
+	}
+	return nearest, distance
 }
