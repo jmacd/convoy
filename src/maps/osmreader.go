@@ -13,26 +13,22 @@ import "runtime"
 import "code.google.com/p/goprotobuf/proto"
 
 import "proto/osm"
-import "geo"
 
 var (
 	numReaderProcs = runtime.NumCPU() - 1
 )
 
 type Map struct {
-	Nodes map[int64]*Node
-	Ways map[int64]*Way
-	Rels map[int64]*Relation
-	Tree *geo.Tree
+	numNodes, numWays, numRels int64
 	blockCh chan *osm.Blob
-	graphCh chan *blockData
+	graphCh chan *BlockData
 	doneCh chan bool
 }
 
-type blockData struct {
-	nodes []Node
-	ways []Way
-	rels []Relation
+type BlockData struct {
+	Nodes []Node
+	Ways []Way
+	Rels []Relation
 }
 
 type blockParams struct {
@@ -58,8 +54,7 @@ type Attributes []Attribute
 
 type Node struct {
 	Id int64
-	coords [3]geo.EarthLoc  // (X, Y, Z)
-	treeLeft, treeRight *Node  // K-D tree pointers
+	Lat, Long float64
 	Attrs Attributes
 }
 
@@ -83,13 +78,9 @@ type Relation struct {
 
 func NewMap() *Map {
 	return &Map{
-		make(map[int64]*Node),
-		make(map[int64]*Way),
-		make(map[int64]*Relation),
-		geo.NewTree(),
-		make(chan *osm.Blob),
-		make(chan *blockData),
-		make(chan bool),
+		blockCh: make(chan *osm.Blob),
+		graphCh: make(chan *BlockData),
+		doneCh: make(chan bool),
 	}
 }
 
@@ -106,18 +97,6 @@ func readFixed(f io.Reader, s int32) ([]byte, error) {
 			fmt.Sprintln("Insufficient read:", len(buf), s))
 	}
 	return buf, nil
-}
-
-func keepNodeAttr(key string) bool {
-	return true // false
-}
-
-func keepWayAttr(key string) bool {
-	return true // key == "highway"
-}
-
-func keepRelAttr(key string) bool {
-	return true // false
 }
 
 func decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, error) {
@@ -143,32 +122,24 @@ func decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, error) {
 		llon += lons[i]
 		n := &nodes[i]
 		n.Id = lid
-		geo.LatLongDegreesToCoords(
-			1e-9 * float64(bp.latOffset + (bp.granularity * llat)),
-			1e-9 * float64(bp.lonOffset + (bp.granularity * llon)),
-			n.coords[:])
-		attrs := Attributes{}
+		n.Lat = 1e-9 * float64(bp.latOffset + (bp.granularity * llat))
+		n.Long = 1e-9 * float64(bp.lonOffset + (bp.granularity * llon))
 		if kvi < len(kvs) {
 			for kvi < len(kvs) && kvs[kvi] != 0 {
 				key := string(bp.strings[kvs[kvi]])
-				if keepNodeAttr(key) {
-					value := string(bp.strings[kvs[kvi+1]])
-					attrs = append(attrs,
-						Attribute{key, value})
-				}
+				value := string(bp.strings[kvs[kvi+1]])
+				n.Attrs = append(n.Attrs, Attribute{key, value})
 				kvi += 2
 			}
 			kvi++
 		}
-		n.Attrs = make(Attributes, len(attrs))
-		copy(n.Attrs, attrs)
 	}
 	return nodes, nil
 }
 
 func decodeWay(pway *osm.Way, way *Way, bp *blockParams) error {
 	way.Id = pway.GetId()
-	way.Attrs = decodeAttrs(pway.GetKeys(), pway.GetVals(), bp, keepWayAttr)
+	way.Attrs = decodeAttrs(pway.GetKeys(), pway.GetVals(), bp)
 	way.Refs = make([]int64, len(pway.GetRefs()))
 	var lref int64
 	for i, dref := range pway.GetRefs() {
@@ -178,27 +149,18 @@ func decodeWay(pway *osm.Way, way *Way, bp *blockParams) error {
 	return nil
 }
 
-func decodeAttrs(keys, vals []uint32, bp *blockParams, 
-	keep func (string) bool) Attributes {
-	attrs := Attributes{}
-	for i := 0; i < len(keys); i++ {
-		key := string(bp.strings[keys[i]])
-		if keep(key) {
-			value := string(bp.strings[vals[i]])
-			attrs = append(attrs, Attribute{key, value})
-		}
+func decodeAttrs(keys, vals []uint32, bp *blockParams) Attributes {
+	attrs := make(Attributes, len(keys))
+	for i, _ := range attrs {
+		attrs[i].Key = string(bp.strings[keys[i]])
+		attrs[i].Value = string(bp.strings[vals[i]])
 	}
-	if len(attrs) == 0 {
-		return nil
-	}
-	res := make(Attributes, len(attrs))
-	copy(res, attrs)
-	return res
+	return attrs
 }
 
 func decodeRelation(prel *osm.Relation, rel *Relation, bp *blockParams) error {
 	rel.Id = prel.GetId()
-	rel.Attrs = decodeAttrs(prel.GetKeys(), prel.GetVals(), bp, keepRelAttr)
+	rel.Attrs = decodeAttrs(prel.GetKeys(), prel.GetVals(), bp)
 	rel.Ents = make([]RelEntry, len(prel.GetMemids()))
 	var lmemid int64
 	for i, dmemid := range prel.GetMemids() {
@@ -231,13 +193,13 @@ func decodeRelations(prels []*osm.Relation, bp *blockParams) ([]Relation, error)
 	return rels, nil
 }
 
-func decodeBlock(pb *osm.PrimitiveBlock) (*blockData, error) {
+func decodeBlock(pb *osm.PrimitiveBlock) (*BlockData, error) {
 	bparams := &blockParams{
 		pb.GetStringtable().GetS(), 
 		int64(pb.GetGranularity()),
 		pb.GetLatOffset(), 
 		pb.GetLonOffset() }
-	bdata := &blockData{}
+	bdata := &BlockData{}
 	for _, pg := range pb.GetPrimitivegroup() {
 		for _, _ = range pg.GetNodes() {
 			return nil, errors.New("Unexpected non-dense node!")
@@ -247,23 +209,23 @@ func decodeBlock(pb *osm.PrimitiveBlock) (*blockData, error) {
 			if err != nil {
 				return nil, err
 			}
-			bdata.nodes = nodes
+			bdata.Nodes = nodes
 		}
 		ways, err := decodeWays(pg.GetWays(), bparams)
 		if err != nil {
 			return nil, err
 		}
-		bdata.ways = ways
+		bdata.Ways = ways
 		relations, err := decodeRelations(pg.GetRelations(), bparams)
 		if err != nil {
 			return nil, err
 		}
-		bdata.rels = relations
+		bdata.Rels = relations
 	}
 	return bdata, nil
 }
 
-func (m *Map) processBlock(blob *osm.Blob) (*blockData, error) {
+func (m *Map) processBlock(blob *osm.Blob) (*BlockData, error) {
 	data, err := decompressBlob(blob)
 	if err != nil {
 		return nil, err
@@ -289,12 +251,13 @@ func (m *Map) decodeBlockFunc() {
 			log.Print("Block decode failed!")  // @@@ TODO(jmacd)
 			continue
 		}
+		
 		m.graphCh <- bd
 	}
 	m.graphCh <- nil
 }
 
-func (m *Map) buildGraph() {
+func (m *Map) buildGraph(bf func (*BlockData)) {
 	nils := 0
 	for bd := range m.graphCh {
 		if bd == nil {
@@ -304,18 +267,10 @@ func (m *Map) buildGraph() {
 			}
 			continue
 		}
-		for i := 0; i < len(bd.nodes); i++ {
-			n := &bd.nodes[i]
-			m.Nodes[n.Id] = n
-		}
-		for i := 0; i < len(bd.ways); i++ {
-			w := &bd.ways[i]
-			m.Ways[w.Id] = w
-		}
-		for i := 0; i < len(bd.rels); i++ {
-			r := &bd.rels[i]
-			m.Rels[r.Id] = r
-		}
+		m.numNodes += int64(len(bd.Nodes))
+		m.numWays += int64(len(bd.Ways))
+		m.numRels += int64(len(bd.Rels))
+		bf(bd)
 	}
 	m.doneCh <- true
 }
@@ -376,15 +331,15 @@ func readHeader(b *osm.Blob) error {
 	return nil
 }
 
-func (m *Map) ReadMap(f io.Reader) error {
+func (m *Map) ReadMap(file io.Reader, bf func (*BlockData)) error {
 	var nread int64
 	for i := 0; i < numReaderProcs; i++ {
 		go m.decodeBlockFunc()
 	}
-	go m.buildGraph()
+	go m.buildGraph(bf)
 	for {
 		// Read the next blob header size
-		hsizeb, err := readFixed(f, 4)
+		hsizeb, err := readFixed(file, 4)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -398,7 +353,7 @@ func (m *Map) ReadMap(f io.Reader) error {
 		binary.Read(bytes.NewReader(hsizeb), binary.BigEndian, &hsize)
 
 		// Read the next blob header
-		headb, err := readFixed(f, hsize)
+		headb, err := readFixed(file, hsize)
 		if err != nil {
 			return err
 		}
@@ -415,7 +370,7 @@ func (m *Map) ReadMap(f io.Reader) error {
 		if bsize <= 0 {
 			return errors.New("Zero byte blob; quitting")
 		}
-		blobb, err := readFixed(f, bsize)
+		blobb, err := readFixed(file, bsize)
 		if err != nil {
 			return err
 		}
@@ -443,81 +398,10 @@ func (m *Map) ReadMap(f io.Reader) error {
 	for i := 0; i < numReaderProcs; i++ {
 		m.blockCh <- nil
 	}
-	var _ = <- m.doneCh
+	<- m.doneCh
 	log.Println("Finished reading", nread, "bytes", 
-		len(m.Nodes), "nodes",
-		len(m.Ways), "ways",
-		len(m.Rels), "relations")
-	nodes := make([]geo.Vertex, len(m.Nodes))
-	node_i := 0
-	for _, node := range m.Nodes {
-		nodes[node_i] = node
-		node_i++
-	}
-	m.Tree.Build(nodes)
-
-	// m.PrintAttrs()
-	var ms runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&ms)
-	log.Println("Finished building kdtree, %d bytes in use", ms.Alloc)
+		m.numNodes, "nodes",
+		m.numWays, "ways",
+		m.numRels, "relations")
 	return nil
-}
-
-func (m *Map) PrintAttrs() {
-	na := make(map[string]int)
-	wa := make(map[string]int)
-	ra := make(map[string]int)
-	fu := func(s map[string]int, as Attributes) {
-		for _, a := range as {
-			ck := a.Key + "=" + a.Value
-			s[ck] += 1 
-		}
-	}
-	for _, n := range m.Nodes {
-		fu(na, n.Attrs)
-	}
-	for _, w := range m.Ways {
-		fu(wa, w.Attrs)
-	}
-	for _, r := range m.Rels {
-		fu(ra, r.Attrs)
-	}
-	for a, c := range na {
-		fmt.Printf("NODE ATTR %s (%d)", a, c)
-	}
-	for a, c := range wa {
-		fmt.Printf("WAY ATTR %s (%c)", a, c)
-	}
-	for a, c := range ra {
-		fmt.Printf("REL ATTR %s (%c)", a, c)
-	}
-}
-
-func (n *Node) Point() geo.Coords {
-	return n.coords[:]
-}
-
-func (n *Node) String() string {
-	return fmt.Sprintf("[id=%u (%.3f,%.3f)]", n.Id, n.coords[0], n.coords[1])
-}
-
-func (n *Node) Left() geo.Vertex {
-	return n.treeLeft
-}
-
-func (n *Node) Right() geo.Vertex {
-	return n.treeRight
-}
-
-func (n *Node) SetLeft(l geo.Vertex) {
-	if l != nil {
-		n.treeLeft = l.(*Node)
-	}
-}
-
-func (n *Node) SetRight(r geo.Vertex) {
-	if r != nil {
-		n.treeRight = r.(*Node)
-	}
 }
