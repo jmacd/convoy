@@ -6,14 +6,14 @@ import "math"
 // Represent points in 3 dimensions, scaled to slightly larger than
 // the size of Earth
 const (
-	EarthRadius = 6371000  // Meters
-	EarthScale  = 6500000  // Meters
-
-	surfaceFrac = float64(EarthRadius) / float64(EarthScale)
+	earthRadius      = 6371000  // Meters
+	earthDiameter    = float64(earthRadius * 2)
+	earthPrecision   = float64(earthRadius) / float64(math.MaxInt32)
+	invEarthDiameter = 1.0 / earthDiameter
 )
 
-// ScaledPt is a unit of EarthScale / 2^31, which has approximately
-// 3mm resolution at the earth's surface.
+// EarthLoc is a unit of earthPrecision, which has approximately 3mm
+// resolution at the earth's surface.
 type EarthLoc int32
 type Coords []EarthLoc  // TODO(jmacd) How would performance be if
 			// this was [3]EarthLoc
@@ -41,17 +41,36 @@ func LatLongDegreesToCoords(lat, long float64, c Coords) {
 	x1 := math.Cos(latRad) * math.Cos(longRad)
 	y1 := math.Cos(latRad) * math.Sin(longRad)
 	z1 := math.Sin(latRad)
-	c[0] = EarthLoc(x1 * surfaceFrac * math.MaxInt32)
-	c[1] = EarthLoc(y1 * surfaceFrac * math.MaxInt32)
-	c[2] = EarthLoc(z1 * surfaceFrac * math.MaxInt32)
+	c[0] = EarthLoc(x1 * math.MaxInt32)
+	c[1] = EarthLoc(y1 * math.MaxInt32)
+	c[2] = EarthLoc(z1 * math.MaxInt32)
 }
 
-func square(x EarthLoc) compDistance {
+func squareEarthLoc(x EarthLoc) compDistance {
 	return compDistance(x) * compDistance(x)
 }
 
 func comparableDistance(p0, p1 Coords) compDistance {
-	return square(p0[0] - p1[0]) +
-		square(p0[1] - p1[1]) +
-		square(p0[2] - p1[2])
+	return squareEarthLoc(p0[0] - p1[0]) +
+		squareEarthLoc(p0[1] - p1[1]) +
+		squareEarthLoc(p0[2] - p1[2])
+}
+
+func squareRealLoc(x float64) float64 {
+	return x * x
+}
+
+func chordLength(p0, p1 Coords) float64 {
+	return math.Sqrt(
+		squareRealLoc(float64(p0[0] - p1[0]) * earthPrecision) +
+		squareRealLoc(float64(p0[1] - p1[1]) * earthPrecision) +
+		squareRealLoc(float64(p0[2] - p1[2]) * earthPrecision))
+}
+
+func GreatCircleDistance(p0, p1 Coords) float64 {
+	a := chordLength(p0, p1) * invEarthDiameter
+	if a > 1.0 {
+		panic(fmt.Sprintln("Can't happen", a))
+	}
+	return earthDiameter * math.Asin(a)
 }

@@ -39,7 +39,7 @@ type mapCount struct {
 }
 
 type mapData1 struct {
-	// The set of node ID we wish to keep during the following
+	// The set of node IDs we wish to keep during the following
 	// scan and renumberings into a (32-bit dense ID number,
 	// 32-bit count of outgoing edges)
 	mapIds map[mapId]mapCount
@@ -48,6 +48,7 @@ type mapData1 struct {
 }
 
 type node struct {
+	id nodeId
 	position [3]geo.EarthLoc
 	treeLeft, treeRight nodeId
 	neighbors []nodeId
@@ -75,6 +76,9 @@ func (md *mapData1) mapPass1(bd *maps.BlockData) {
 		if !keepWay(way) {
 			continue
 		}
+		if len(way.Refs) < 2 {
+			continue
+		}
 		md.totalEdges += uint32(len(way.Refs)) - 1
 		for e, ref := range way.Refs {
 			var edges uint32
@@ -97,8 +101,49 @@ func (md *mapData1) mapPass1(bd *maps.BlockData) {
 	}
 }
 
+func (md *mapData2) addEdge(n0 *node, v1 nodeId) {
+	for i, neighbor := range n0.neighbors {
+		if neighbor != 0 {
+			continue
+		}
+		n0.neighbors[i] = v1
+	}
+}
+
+func (md *mapData2) addEdges(v0, v1 nodeId) {
+	md.addEdge(&md.nodes[v0], v1)
+	md.addEdge(&md.nodes[v1], v0)
+}
+
 func (md *mapData2) mapPass2(bd *maps.BlockData, md1 *mapData1) {
-	
+	for n := 0; n < len(bd.Nodes); n++ {
+		mapnode := &bd.Nodes[n]
+		mc, has := md1.mapIds[mapId(mapnode.Id)]
+		if !has {
+			continue
+		}
+		mn := &md.nodes[mc.id]
+		mn.id = mc.id
+		geo.LatLongDegreesToCoords(
+			mapnode.Lat, mapnode.Long, mn.position[:])
+	}
+	for w := 0; w < len(bd.Ways); w++ {
+		way := &bd.Ways[w]
+		if !keepWay(way) {
+			continue
+		}
+		if len(way.Refs) < 2 {
+			continue
+		}
+		for e := 1; e < len(way.Refs); e++ {
+			mc0, has0 := md1.mapIds[mapId(way.Refs[e-1])]
+			mc1, has1 := md1.mapIds[mapId(way.Refs[e])]
+			if !has0 || !has1 {
+				panic("Corrupted mapIds?")
+			}
+			md.addEdges(mc0.id, mc1.id)
+		}
+	}	
 }
 
 func readInput() io.Reader {
@@ -131,10 +176,12 @@ func newMapData2(md1 *mapData1) *mapData2 {
 		make([]nodeId, md1.totalEdges * 2),
 	}
 	ei := 0
+	c := 0
 	for _, mc := range md1.mapIds {
 		np := &md2.nodes[mc.id]
 		np.neighbors = md2.edges[ei:ei+int(mc.ec)]
 		ei += int(mc.ec)
+		c++
 	}
 	if ei != len(md2.edges) {
 		panic(fmt.Sprintln("Incorrect edge count", ei, len(md2.edges)))
@@ -169,4 +216,53 @@ func main() {
 	}
 	md1 = nil
 	printMem()
+	
+	// Sanity check: should have filled-in all edges
+	for _, e := range md2.edges {
+		if e == nodeId(0) {
+			panic("Did not fill-in all edges")
+		}
+	}
+
+	tree := geo.NewTree(md2)
+	tree.Build()
+	log.Println("Built geospatial tree")
+	printMem()
+}
+
+func (n *node) Point() geo.Coords {
+	return n.position[:]
+}
+
+func (n *node) Left(g geo.Graph) geo.Vertex {
+	return &g.(*mapData2).nodes[n.treeLeft]
+}
+
+func (n *node) Right(g geo.Graph) geo.Vertex {
+	return &g.(*mapData2).nodes[n.treeRight]
+}
+
+func (n *node) SetLeft(g geo.Graph, v geo.Vertex) {
+	if v != nil {
+		n.treeLeft = v.(*node).id
+	}
+}
+
+func (n *node) SetRight(g geo.Graph, v geo.Vertex) {
+	if v != nil {
+		n.treeRight = v.(*node).id
+	}
+}
+
+func (n *node) String() string {
+	return fmt.Sprintf("(%v,%v,%v)", 
+		n.position[0], n.position[1], n.position[2])
+}
+
+func (md *mapData2) Count() int {
+	return len(md.nodes) - 1
+}
+
+func (md *mapData2) Node(i int) geo.Vertex {
+	return &md.nodes[i + 1]
 }

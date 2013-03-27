@@ -12,20 +12,26 @@ type Vertices []Vertex
 
 // Tree is a K-D Tree with K=3
 type Tree struct {
+	graph Graph
 	root Vertex
+}
+
+type Graph interface {
+	Count() int
+	Node(i int) Vertex
 }
 
 type Vertex interface {
 	Point() Coords
+	Left(Graph) Vertex
+	Right(Graph) Vertex
+	SetLeft(Graph, Vertex)
+	SetRight(Graph, Vertex)
 	String() string
-	Left() Vertex
-	Right() Vertex
-	SetLeft(Vertex)
-	SetRight(Vertex)
 }
 
-func NewTree() *Tree {
-	return &Tree{}
+func NewTree(graph Graph) *Tree {
+	return &Tree{graph, nil}
 }
 
 func (n Vertices) Len() int { return len(n) }
@@ -129,11 +135,13 @@ func concurrentSort(input Vertices, s sorter) Vertices {
 	return output
 }
 
-func (t *Tree) Build(graph []Vertex) {
-	xdim := make(Vertices, len(graph))
-	ydim := make(Vertices, len(graph))
-	zdim := make(Vertices, len(graph))
-	for i, v := range graph {
+func (t *Tree) Build() {
+	count := t.graph.Count()
+	xdim := make(Vertices, count)
+	ydim := make(Vertices, count)
+	zdim := make(Vertices, count)
+	for i := 0; i < count; i++ {
+		v := t.graph.Node(i)
 		xdim[i] = v
 		ydim[i] = v
 		zdim[i] = v
@@ -141,10 +149,10 @@ func (t *Tree) Build(graph []Vertex) {
 	xdim = concurrentSort(xdim, sortByX{})
 	ydim = concurrentSort(ydim, sortByY{})
 	zdim = concurrentSort(zdim, sortByZ{})
-	tmp := make(Vertices, len(graph))
+	tmp := make(Vertices, count)
 	con := common.NewConcurrentizer(conSizeLimit)
-	con.Do(len(graph), func() {
-		t.root = buildTree(xdim, ydim, zdim, tmp,
+	con.Do(count, func() {
+		t.root = t.buildTree(xdim, ydim, zdim, tmp,
 			sortByX{}, sortByY{}, sortByZ{}, con)
 	}).Wait()
 }
@@ -157,9 +165,9 @@ func (t *Tree) FindExact(point Coords) Vertex {
 			return v
 		}
 		if s.Less(point, v.Point()) {
-			v = v.Left()
+			v = v.Left(t.graph)
 		} else {
-			v = v.Right()
+			v = v.Right(t.graph)
 		}
 	}
 	return nil
@@ -181,7 +189,7 @@ func findMedian(dim Vertices, s sorter) int {
 
 // Note: avoid passing dimN and sortN as slices because that 
 // causes them to escape and allocate a lot of memory.
-func buildTree(dim0, dim1, dim2, dimt Vertices, 
+func (t *Tree) buildTree(dim0, dim1, dim2, dimt Vertices, 
 	sort0, sort1, sort2 sorter, 
 	con *common.Concurrentizer) Vertex {
 	if len(dim0) == 0 {
@@ -222,12 +230,14 @@ func buildTree(dim0, dim1, dim2, dimt Vertices,
 	}
 
 	lh := con.Do(len(tmpLeft), func () {
-		split.SetLeft(buildTree(nextLeft[0], nextLeft[1], nextLeft[2],
-			tmpLeft, sort1, sort2, sort0, con))
+		split.SetLeft(t.graph, 
+			t.buildTree(nextLeft[0], nextLeft[1], nextLeft[2],
+				tmpLeft, sort1, sort2, sort0, con))
 	})
 	rh := con.Do(len(tmpRight), func() {
-		split.SetRight(buildTree(nextRight[0], nextRight[1], nextRight[2], 
-			tmpRight, sort1, sort2, sort0, con))
+		split.SetRight(t.graph,
+			t.buildTree(nextRight[0], nextRight[1], nextRight[2], 
+				tmpRight, sort1, sort2, sort0, con))
 	})
 	lh.Wait()
 	rh.Wait()
@@ -235,15 +245,15 @@ func buildTree(dim0, dim1, dim2, dimt Vertices,
 }
 
 func (t *Tree) FindNearest(point Coords) Vertex {
-	node, _ := findNearestPoint(point, t.root,
+	node, _ := t.findNearestPoint(point, t.root,
 		sortByX{}, sortByY{}, sortByZ{})
 	return node
 }
 
-func findNearestPoint(point Coords, node Vertex,
+func (t *Tree) findNearestPoint(point Coords, node Vertex,
 	sort0, sort1, sort2 sorter) (Vertex, compDistance) {
-	lc := node.Left()
-	rc := node.Right()
+	lc := node.Left(t.graph)
+	rc := node.Right(t.graph)
 	np := node.Point()
 	pd := comparableDistance(point, np)
 	if lc == nil && rc == nil {
@@ -259,13 +269,13 @@ func findNearestPoint(point Coords, node Vertex,
 	var nearest Vertex
 	bisectDistance, distance := infiniteDistance, infiniteDistance
 	if closer != nil {
-		nearest, distance = findNearestPoint(point, closer, sort1, sort2, sort0)
+		nearest, distance = t.findNearestPoint(point, closer, sort1, sort2, sort0)
 		bisectDistance =
-			square(sort0.Value(nearest.Point()) - sort0.Value(point))
+			squareEarthLoc(sort0.Value(nearest.Point()) - sort0.Value(point))
 	}
 	// TODO(jmacd) Feels like this should be > half of the time
 	if farther != nil && distance >= bisectDistance {
-		fnear, fdist := findNearestPoint(point, farther, sort1, sort2, sort0)
+		fnear, fdist := t.findNearestPoint(point, farther, sort1, sort2, sort0)
 		if fdist < distance {
 			nearest, distance = fnear, fdist
 		}

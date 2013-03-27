@@ -6,6 +6,8 @@ import "math"
 import "math/rand"
 import "runtime"
 
+type testVertices []Vertex
+
 type testNode struct {
 	coord [3]EarthLoc
 	left, right Vertex
@@ -13,6 +15,14 @@ type testNode struct {
 
 func init() {
 	runtime.GOMAXPROCS(runtime.NumCPU())
+}
+
+func (tv testVertices) Count() int {
+	return len(tv)
+}
+
+func (tv testVertices) Node(i int) Vertex {
+	return tv[i]
 }
 
 func (tn *testNode) Point() Coords {
@@ -24,19 +34,19 @@ func (tn *testNode) String() string {
 		tn.coord[0], tn.coord[1], tn.coord[2])
 }
 
-func (n *testNode) Left() Vertex {
+func (n *testNode) Left(_ Graph) Vertex {
 	return n.left
 }
 
-func (n *testNode) Right() Vertex {
+func (n *testNode) Right(_ Graph) Vertex {
 	return n.right
 }
 
-func (n *testNode) SetLeft(l Vertex) {
+func (n *testNode) SetLeft(_ Graph, l Vertex) {
 	n.left = l
 }
 
-func (n *testNode) SetRight(r Vertex) {
+func (n *testNode) SetRight(_ Graph, r Vertex) {
 	n.right = r
 }
 
@@ -96,8 +106,7 @@ func testPoint(x, y, z int32) Vertex {
 }
 
 func TestTree(t *testing.T) {
-	tree := NewTree()
-	g := []Vertex{
+	g := testVertices{
 		testPoint(2, 3, 5),
 		testPoint(5, 4, 4),
 		testPoint(4, 7, 6),
@@ -105,7 +114,8 @@ func TestTree(t *testing.T) {
 		testPoint(8, 1, 2),
 		testPoint(9, 6, 1),
 	}
-	tree.Build(g)
+	tree := NewTree(g)
+	tree.Build()
 	for _, v := range g {
 		f := tree.FindExact(v.Point())
 		if v != f {
