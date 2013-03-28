@@ -70,3 +70,36 @@ func SelectQuery(db *sql.DB, table TableName, columns ...string) (*sql.Stmt, err
 		" WHERE " + wherePlaceHolders(columns))
 }
 
+func HasRows(s *sql.Stmt, a ...interface{}) (bool, error) {
+	has, err := s.Query(a...)
+	if err != nil {
+		return false, err
+	}
+	defer has.Close()
+	if has.Next() {
+		return true, nil
+	}
+	if err := has.Err(); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+func ForAll(stmt *sql.Stmt, afunc func (), a ...interface{}) error {
+	rows, err := stmt.Query()
+	if err != nil {
+		return err
+	}
+
+	defer rows.Close()
+	for rows.Next() {
+		if err := rows.Scan(a...); err != nil {
+			return err
+		}
+		afunc()
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	return nil
+}

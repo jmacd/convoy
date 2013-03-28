@@ -1,11 +1,12 @@
 package geo
 
+import "log"
 import "sort"
 
 import "common"
 
 const (
-	conSizeLimit = 1000
+	conSizeLimit = 10000
 )
 
 type Vertices []Vertex
@@ -96,14 +97,13 @@ func mergeSort(output, input Vertices,
 	m := (len(input) - 1) / 2 + 1
 	o0, o1 := output[0:m], output[m:]
 	i0, i1 := input[0:m], input[m:]
-	w0 := con.Do(len(o0), func () {
-		mergeSort(o0, i0, s, con)
+	con.Do(len(o0), func (ccon *common.Concurrentizer) {
+		mergeSort(o0, i0, s, ccon)
 	})
-	w1 := con.Do(len(o1), func () {
-		mergeSort(o1, i1, s, con)
+	con.Do(len(o1), func (ccon *common.Concurrentizer) {
+		mergeSort(o1, i1, s, ccon)
 	})
-	w0.Wait()
-	w1.Wait()
+	con.Wait()
 	copy(input, output)
 	merge(output, i0, i1, s)
 }
@@ -129,8 +129,8 @@ func merge(out, in0, in1 Vertices, s sorter) {
 func concurrentSort(input Vertices, s sorter) Vertices {
 	con := common.NewConcurrentizer(conSizeLimit)
 	output := make(Vertices, len(input))
-	con.Do(len(output), func () {
-		mergeSort(output, input, s, con)
+	con.Do(len(output), func (ccon *common.Concurrentizer) {
+		mergeSort(output, input, s, ccon)
 	}).Wait()
 	return output
 }
@@ -149,11 +149,12 @@ func (t *Tree) Build() {
 	xdim = concurrentSort(xdim, sortByX{})
 	ydim = concurrentSort(ydim, sortByY{})
 	zdim = concurrentSort(zdim, sortByZ{})
+	log.Println("Node-sorting finished")
 	tmp := make(Vertices, count)
 	con := common.NewConcurrentizer(conSizeLimit)
-	con.Do(count, func() {
+	con.Do(count, func (ccon *common.Concurrentizer) {
 		t.root = t.buildTree(xdim, ydim, zdim, tmp,
-			sortByX{}, sortByY{}, sortByZ{}, con)
+			sortByX{}, sortByY{}, sortByZ{}, ccon)
 	}).Wait()
 }
 
@@ -229,18 +230,17 @@ func (t *Tree) buildTree(dim0, dim1, dim2, dimt Vertices,
 		tmpRight = beingSplit[mid+1:]
 	}
 
-	lh := con.Do(len(tmpLeft), func () {
+	con.Do(len(tmpLeft), func (ccon *common.Concurrentizer) {
 		split.SetLeft(t.graph, 
 			t.buildTree(nextLeft[0], nextLeft[1], nextLeft[2],
-				tmpLeft, sort1, sort2, sort0, con))
+				tmpLeft, sort1, sort2, sort0, ccon))
 	})
-	rh := con.Do(len(tmpRight), func() {
+	con.Do(len(tmpRight), func (ccon *common.Concurrentizer) {
 		split.SetRight(t.graph,
 			t.buildTree(nextRight[0], nextRight[1], nextRight[2], 
-				tmpRight, sort1, sort2, sort0, con))
+				tmpRight, sort1, sort2, sort0, ccon))
 	})
-	lh.Wait()
-	rh.Wait()
+	con.Wait()
 	return split
 }
 

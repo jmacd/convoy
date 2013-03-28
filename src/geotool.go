@@ -99,6 +99,7 @@ func NewCityFinder(db *sql.DB) (*CityFinder, error) {
 	return cf, nil
 }
 
+// TODO(jmacd) Use data.ForAll
 func doAll(stmt *sql.Stmt, csfunc func (cs common.CityState) error) error {
 	rows, err := stmt.Query()
 	if err != nil {
@@ -121,35 +122,20 @@ func doAll(stmt *sql.Stmt, csfunc func (cs common.CityState) error) error {
 	return nil
 }
 
-func hasRows(s *sql.Stmt, a ...interface{}) (bool, error) {
-	has, err := s.Query(a...)
-	if err != nil {
-		return false, err
-	}
-	defer has.Close()
-	if has.Next() {
-		return true, nil
-	}
-	if err := has.Err(); err != nil {
-		return false, err
-	}
-	return false, nil
-}
-
 func (cf *CityFinder) hasLocation(cs common.CityState) (bool, error) {
-	return hasRows(cf.hasLocStmt, cs.City, common.StateCode(cs.State))
+	return data.HasRows(cf.hasLocStmt, cs.City, common.StateCode(cs.State))
 }
 
 func (cf *CityFinder) hasCorrection(cs common.CityState) (bool, error) {
-	return hasRows(cf.hasCorStmt, cs.City, common.StateCode(cs.State))
+	return data.HasRows(cf.hasCorStmt, cs.City, common.StateCode(cs.State))
 }
 
 func (cf *CityFinder) hasGoogleUnknown(cs common.CityState) (bool, error) {
-	return hasRows(cf.hasGoogUnkStmt, cs.City, common.StateCode(cs.State))
+	return data.HasRows(cf.hasGoogUnkStmt, cs.City, common.StateCode(cs.State))
 }
 
 func (cf *CityFinder) hasWikipediaUnknown(uri string) (bool, error) {
-	return hasRows(cf.hasWikiUnkStmt, uri)
+	return data.HasRows(cf.hasWikiUnkStmt, uri)
 }
 
 func (cf *CityFinder) getLocFromWiki(uri string) (coordinates, []byte, error) {

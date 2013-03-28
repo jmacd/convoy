@@ -6,8 +6,10 @@ import "io"
 import "log"
 import "os"
 import "runtime"
-import "geo"
+import "database/sql"
 
+import "data"
+import "geo"
 import "maps"
 
 var input = flag.String("input", "", "OSM PBF formatted file")
@@ -159,7 +161,8 @@ func printMem() {
 	var ms runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&ms)
-	log.Println("Total memory allocated:", ms.Alloc)
+	log.Println("Memory allocated:", ms.Alloc,
+		"Total:", ms.TotalAlloc, "Sys:", ms.Sys)
 }
 
 func newMapData1() *mapData1 {
@@ -196,6 +199,12 @@ func main() {
 	if len(argv) != 0 {
 		log.Fatalln("Extra args:", argv)
 	}
+	db, err := data.OpenDb()
+	if err != nil {
+		log.Fatal("Could not open database", err)
+	}
+	defer db.Close()
+
 	osm := maps.NewMap()
 
 	md1 := newMapData1()
@@ -228,6 +237,10 @@ func main() {
 	tree.Build()
 	log.Println("Built geospatial tree")
 	printMem()
+
+	if err := printCityDistances(db, tree); err != nil {
+		log.Println("PrintCityDistances:", err)
+	}
 }
 
 func (n *node) Point() geo.Coords {
@@ -266,3 +279,33 @@ func (md *mapData2) Count() int {
 func (md *mapData2) Node(i int) geo.Vertex {
 	return &md.nodes[i + 1]
 }
+
+// TODO(jmacd) Move this...
+func printCityDistances(db *sql.DB, tree *geo.Tree) error {
+	stmt, err := db.Prepare(
+		"SELECT LocCity, LocState, Latitude, Longitude FROM " +
+		data.Table(data.Locations))
+	if err != nil {
+		return err
+	}
+	count := 0
+	var city, state []byte
+	var lat, long float64
+	if err := data.ForAll(stmt, func () {
+		if string(state) != "CA" {  // TODO(jmacd): Dirty! Fix.
+			return
+		}
+		count++
+		var coords [3]geo.EarthLoc
+		geo.LatLongDegreesToCoords(lat, long, coords[:])
+		near := tree.FindNearest(coords[:])
+		dist := geo.GreatCircleDistance(near.Point(), coords[:])
+		log.Printf("Looking up %v, %v @ %.2f,%.2f nearest map node %v meters", 
+			string(city), string(state), lat, long, dist)
+	}, &city, &state, &lat, &long); err != nil {
+		return err
+	}
+	log.Println("Scanned", count, "cities")
+	return nil
+}
+
