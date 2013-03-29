@@ -150,6 +150,7 @@ func (t *Tree) Build() {
 	ydim = concurrentSort(ydim, sortByY{})
 	zdim = concurrentSort(zdim, sortByZ{})
 	log.Println("Node-sorting finished")
+	common.PrintMem()
 	tmp := make(Vertices, count)
 	con := common.NewConcurrentizer(conSizeLimit)
 	con.Do(count, func (ccon *common.Concurrentizer) {
@@ -246,18 +247,18 @@ func (t *Tree) buildTree(dim0, dim1, dim2, dimt Vertices,
 
 func (t *Tree) FindNearest(point Coords) Vertex {
 	node, _ := t.findNearestPoint(point, t.root,
-		sortByX{}, sortByY{}, sortByZ{})
+		sortByX{}, sortByY{}, sortByZ{}, 0)
 	return node
 }
 
 func (t *Tree) findNearestPoint(point Coords, node Vertex,
-	sort0, sort1, sort2 sorter) (Vertex, compDistance) {
+	sort0, sort1, sort2 sorter, depth int) (Vertex, compDistance) {
 	lc := node.Left(t.graph)
 	rc := node.Right(t.graph)
 	np := node.Point()
 	pd := comparableDistance(point, np)
 	if lc == nil && rc == nil {
-		return node, pd
+ 		return node, pd
 	}
 	lessThan := sort0.Less(point, np)
 	var closer, farther Vertex
@@ -269,13 +270,16 @@ func (t *Tree) findNearestPoint(point Coords, node Vertex,
 	var nearest Vertex
 	bisectDistance, distance := infiniteDistance, infiniteDistance
 	if closer != nil {
-		nearest, distance = t.findNearestPoint(point, closer, sort1, sort2, sort0)
+		nearest, distance = t.findNearestPoint(
+			point, closer, sort1, sort2, sort0, depth + 1)
 		bisectDistance =
-			squareEarthLoc(sort0.Value(nearest.Point()) - sort0.Value(point))
+			squareEarthLoc(sort0.Value(nearest.Point()) - 
+				sort0.Value(point))
 	}
 	// TODO(jmacd) Feels like this should be > half of the time
 	if farther != nil && distance >= bisectDistance {
-		fnear, fdist := t.findNearestPoint(point, farther, sort1, sort2, sort0)
+		fnear, fdist := t.findNearestPoint(
+			point, farther, sort1, sort2, sort0, depth + 1)
 		if fdist < distance {
 			nearest, distance = fnear, fdist
 		}

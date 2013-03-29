@@ -1,8 +1,13 @@
 package common
 
 import "crypto/tls"
+import "fmt"
 import "io/ioutil"
+import "log"
 import "net/http"
+import "os"
+import "runtime"
+import "runtime/pprof"
 import "time"
 
 const (
@@ -64,4 +69,25 @@ func GetUrlInternal(
 		return nil, err
 	}
 	return body, nil
+}
+
+var profileCount = 0
+
+func PrintMem() {
+	var ms runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&ms)
+
+	pname := fmt.Sprint("prof", profileCount)
+	of, err := os.Create(pname)
+	profileCount++
+	defer of.Close()
+	if err == nil {
+		pprof.Lookup("heap").WriteTo(of, 1)
+	}
+
+	log.Println("Memory allocated:", ms.Alloc,
+		"Total:", ms.TotalAlloc, "Sys:", ms.Sys,
+		"Goroutines:", runtime.NumGoroutine(),
+		"Profile:", pname)
 }

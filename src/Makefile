@@ -17,10 +17,12 @@ CFILES = \
 
 MFILES = \
 	common/cncrntzr.go \
+	common/common.go \
 	maptool.go \
 	maps/osmreader.go \
 	geo/kdtree.go \
 	geo/point.go \
+	graph/sssp.go \
 	$(PFILES)
 
 GFILES = \

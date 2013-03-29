@@ -6,11 +6,12 @@ import "io"
 import "log"
 import "os"
 import "runtime"
-import "database/sql"
 
+import "common"
 import "data"
 import "geo"
 import "maps"
+//import "graph"
 
 var input = flag.String("input", "", "OSM PBF formatted file")
 
@@ -25,11 +26,11 @@ var highwayTypes = map[string]bool {
 	"secondary_link": true,
 	"tertiary": true,
 	"tertiary_link": true,
-	"living_street": true,
-	"residential": true,
-	"unclassified": true,
-	"service": true,
-	"road": true,
+	"living_street": false,
+	"residential": false,
+	"unclassified": false,
+	"service": false,
+	"road": false,
 }
 
 type nodeId uint32
@@ -64,8 +65,8 @@ type mapData2 struct {
 func keepWay(way *maps.Way) bool {
 	for _, a := range way.Attrs {
 		if a.Key == "highway" {
-			if _, has := highwayTypes[a.Value]; has {
-				return true
+			if yes, has := highwayTypes[a.Value]; has {
+				return yes
 			}
 		}
 	}
@@ -157,14 +158,6 @@ func readInput() io.Reader {
 	return file
 }
 
-func printMem() {
-	var ms runtime.MemStats
-	runtime.GC()
-	runtime.ReadMemStats(&ms)
-	log.Println("Memory allocated:", ms.Alloc,
-		"Total:", ms.TotalAlloc, "Sys:", ms.Sys)
-}
-
 func newMapData1() *mapData1 {
 	return &mapData1{
 		mapIds: make(map[mapId]mapCount),
@@ -213,7 +206,7 @@ func main() {
 	}); err != nil {
 		log.Fatalln("Error reading map:", *input, ":", err)
 	}
-	printMem()
+	common.PrintMem()
 	log.Println("Using", md1.nextNodeId, "nodes, have", 
 		md1.totalEdges, "edges")
 
@@ -224,7 +217,7 @@ func main() {
 		log.Fatalln("Error reading map:", *input, ":", err)
 	}
 	md1 = nil
-	printMem()
+	common.PrintMem()
 	
 	// Sanity check: should have filled-in all edges
 	for _, e := range md2.edges {
@@ -236,11 +229,12 @@ func main() {
 	tree := geo.NewTree(md2)
 	tree.Build()
 	log.Println("Built geospatial tree")
-	printMem()
+	common.PrintMem()
 
-	if err := printCityDistances(db, tree); err != nil {
-		log.Println("PrintCityDistances:", err)
-	}
+	// TODO(jmacd), and then...
+	// if err := printCityDistances(db, tree); err != nil {
+	// 	log.Println("PrintCityDistances:", err)
+	// }
 }
 
 func (n *node) Point() geo.Coords {
@@ -248,10 +242,16 @@ func (n *node) Point() geo.Coords {
 }
 
 func (n *node) Left(g geo.Graph) geo.Vertex {
+	if n.treeLeft == 0 {
+		return nil 
+	}
 	return &g.(*mapData2).nodes[n.treeLeft]
 }
 
 func (n *node) Right(g geo.Graph) geo.Vertex {
+	if n.treeRight == 0 {
+		return nil
+	}
 	return &g.(*mapData2).nodes[n.treeRight]
 }
 
@@ -268,8 +268,8 @@ func (n *node) SetRight(g geo.Graph, v geo.Vertex) {
 }
 
 func (n *node) String() string {
-	return fmt.Sprintf("(%v,%v,%v)", 
-		n.position[0], n.position[1], n.position[2])
+	return fmt.Sprintf("(%v:%v,%v,%v)", 
+		n.id, n.position[0], n.position[1], n.position[2])
 }
 
 func (md *mapData2) Count() int {
@@ -279,33 +279,3 @@ func (md *mapData2) Count() int {
 func (md *mapData2) Node(i int) geo.Vertex {
 	return &md.nodes[i + 1]
 }
-
-// TODO(jmacd) Move this...
-func printCityDistances(db *sql.DB, tree *geo.Tree) error {
-	stmt, err := db.Prepare(
-		"SELECT LocCity, LocState, Latitude, Longitude FROM " +
-		data.Table(data.Locations))
-	if err != nil {
-		return err
-	}
-	count := 0
-	var city, state []byte
-	var lat, long float64
-	if err := data.ForAll(stmt, func () {
-		if string(state) != "CA" {  // TODO(jmacd): Dirty! Fix.
-			return
-		}
-		count++
-		var coords [3]geo.EarthLoc
-		geo.LatLongDegreesToCoords(lat, long, coords[:])
-		near := tree.FindNearest(coords[:])
-		dist := geo.GreatCircleDistance(near.Point(), coords[:])
-		log.Printf("Looking up %v, %v @ %.2f,%.2f nearest map node %v meters", 
-			string(city), string(state), lat, long, dist)
-	}, &city, &state, &lat, &long); err != nil {
-		return err
-	}
-	log.Println("Scanned", count, "cities")
-	return nil
-}
-

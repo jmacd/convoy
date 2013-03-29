@@ -79,6 +79,19 @@ CREATE TABLE IF NOT EXISTS WikipediaUnknown (
        CHARACTER SET = utf8,
        COLLATE = utf8_bin;
 
+CREATE TABLE IF NOT EXISTS RoadDistance (
+       SourceCity 		 VARCHAR(64)	NOT NULL,
+       SourceState		 CHAR(2)	NOT NULL,
+       DestCity 		 VARCHAR(64)	NOT NULL,
+       DestState		 CHAR(2)	NOT NULL,
+       Kilometers		 INTEGER	NOT NULL,
+
+       INDEX EndPoints (SourceCity, SourceState, DestCity, DestState) USING HASH,
+       PRIMARY KEY (SourceCity, SourceState, DestCity, DestState)
+       )
+       CHARACTER SET = utf8,
+       COLLATE = utf8_bin;
+
 CREATE VIEW LoadCityStates (C, S) AS 
        SELECT OriginCity C, OriginState S FROM Convoy.TruckLoads
        UNION ALL SELECT DestCity C, DestState S FROM Convoy.TruckLoads;
