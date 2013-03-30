@@ -20,6 +20,10 @@ var (
 	}
 )
 
+type CityState struct {
+	City, State string
+}
+
 // Maps 2-character state codes to full names
 var	stateMap =  map[string]string {
 	// USA
@@ -172,10 +176,6 @@ var expansions = map[string][]string {
 	"Vla": []string{"Villa"},
 }
 
-type CityState struct {
-	City, State string
-}
-
 func init() {
 	for code, name := range stateMap {
 		reverseStateMap[name] = code
@@ -293,6 +293,10 @@ func (cs CityState) String() string {
 func (cs CityState) WikiUri() string {
 	return WikiBaseUri + 
 		wikiProperName(cs.City) + ",_" + wikiProperName(cs.State)
+}
+
+func (cs0 CityState) Equals(cs1 CityState) bool {
+	return cs0.City == cs1.City && cs0.State == cs1.State
 }
 
 func ParseCityState(s string) (cs CityState) {

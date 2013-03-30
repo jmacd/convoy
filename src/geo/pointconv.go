@@ -1,5 +1,6 @@
-package common
+package geo
 
+import "fmt"
 import "regexp"
 import "strconv"
 
@@ -27,4 +28,17 @@ func StringToDegrees(text string) float64 {
 	}	
 
 	return angle
+}
+
+func fmtDegree(d float64, pn string) string {
+	c := pn[0]
+	if d < 0 {
+		d = -d
+		c = pn[1]
+	}
+	return fmt.Sprintf("%.2f°%c", d, c)
+}
+
+func (sc SphereCoords) String() string {
+	return fmtDegree(sc.Lat, "NS") + "," + fmtDegree(sc.Long, "EW")
 }

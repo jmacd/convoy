@@ -15,8 +15,11 @@ const (
 // EarthLoc is a unit of earthPrecision, which has approximately 3mm
 // resolution at the earth's surface.
 type EarthLoc int32
-type Coords []EarthLoc  // TODO(jmacd) How would performance be if
-			// this was [3]EarthLoc
+type Coords []EarthLoc
+
+type SphereCoords struct {
+	Lat, Long float64  // In degrees
+}
 
 // Square of distance between two points; actual distance is a chord
 // on great circle.
@@ -28,6 +31,10 @@ func (p0 Coords) Equals(p1 Coords) bool {
 	return p0[0] == p1[0] && p0[1] == p1[1] && p0[2] == p1[2]
 }
 
+func (sc SphereCoords) Defined() bool {
+	return sc.Lat != 0.0 && sc.Long != 0.0
+}
+
 func degreeToRad(deg float64) float64 {
 	if (deg < -180.0 || deg >= 180.0) {
 		panic(fmt.Sprintf("Degree out of range: %.12f", deg))
@@ -36,8 +43,8 @@ func degreeToRad(deg float64) float64 {
 }
 
 // Converts Lat/Long in degrees to scaled 3-d earth points.
-func LatLongDegreesToCoords(lat, long float64, c Coords) {
-	latRad, longRad := degreeToRad(lat), degreeToRad(long)
+func LatLongDegreesToCoords(sc SphereCoords, c Coords) {
+	latRad, longRad := degreeToRad(sc.Lat), degreeToRad(sc.Long)
 	x1 := math.Cos(latRad) * math.Cos(longRad)
 	y1 := math.Cos(latRad) * math.Sin(longRad)
 	z1 := math.Sin(latRad)

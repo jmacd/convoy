@@ -1,40 +1,27 @@
-PFILES = \
-	proto/osm/fileformat.pb.go \
-	proto/osm/osmformat.pb.go
-
-CFILES = \
-	convoy.go \
-	common/common.go \
-	common/coordinates.go \
-	common/google.go \
-	common/location.go \
-	data/db.go \
-	boards/util.go \
+GOFILES = \
 	boards/loadboard.go \
 	boards/trulos.go \
-	scraper/browser.go \
-	scraper/scrape.go
-
-MFILES = \
+	boards/util.go \
 	common/cncrntzr.go \
 	common/common.go \
-	maptool.go \
-	maps/osmreader.go \
-	geo/kdtree.go \
-	geo/point.go \
-	graph/sssp.go \
-	$(PFILES)
-
-GFILES = \
-	geotool.go \
-	common/common.go \
-	common/coordinates.go \
 	common/google.go \
 	common/location.go \
 	data/db.go \
 	data/fix.go \
+	geo/kdtree.go \
+	geo/point.go \
+	geo/pointconv.go \
+	graph/sssp.go \
+	maps/osmreader.go \
+	proto/osm/fileformat.pb.go \
+	proto/osm/osmformat.pb.go \
 	scraper/browser.go \
+	scraper/scrape.go \
 	scraper/xml.go
+
+CFILES = convoy.go $(GOFILES)
+MFILES = maptool.go $(GOFILES)
+GFILES = geotool.go $(GOFILES)
 
 BINDIR = ../bin
 

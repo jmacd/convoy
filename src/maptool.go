@@ -128,7 +128,7 @@ func (md *mapData2) mapPass2(bd *maps.BlockData, md1 *mapData1) {
 		mn := &md.nodes[mc.id]
 		mn.id = mc.id
 		geo.LatLongDegreesToCoords(
-			mapnode.Lat, mapnode.Long, mn.position[:])
+			geo.SphereCoords{mapnode.Lat, mapnode.Long}, mn.position[:])
 	}
 	for w := 0; w < len(bd.Ways); w++ {
 		way := &bd.Ways[w]

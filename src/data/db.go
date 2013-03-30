@@ -85,7 +85,7 @@ func HasRows(s *sql.Stmt, a ...interface{}) (bool, error) {
 	return false, nil
 }
 
-func ForAll(stmt *sql.Stmt, afunc func (), a ...interface{}) error {
+func ForAll(stmt *sql.Stmt, afunc func () error, a ...interface{}) error {
 	rows, err := stmt.Query()
 	if err != nil {
 		return err
@@ -96,7 +96,9 @@ func ForAll(stmt *sql.Stmt, afunc func (), a ...interface{}) error {
 		if err := rows.Scan(a...); err != nil {
 			return err
 		}
-		afunc()
+		if err := afunc(); err != nil {
+			return err
+		}
 	}
 	if err := rows.Err(); err != nil {
 		return err
