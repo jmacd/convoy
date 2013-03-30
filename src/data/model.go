@@ -8,11 +8,11 @@ import "common"
 import "geo"
 
 type ConvoyData struct {
-	missingStmt *sql.Stmt
-	addCorStmt *sql.Stmt
-	hasCorStmt *sql.Stmt
-	addLocStmt *sql.Stmt
-	hasLocStmt *sql.Stmt
+	missingStmt    *sql.Stmt
+	addCorStmt     *sql.Stmt
+	hasCorStmt     *sql.Stmt
+	addLocStmt     *sql.Stmt
+	hasLocStmt     *sql.Stmt
 	addGoogUnkStmt *sql.Stmt
 	hasGoogUnkStmt *sql.Stmt
 	addWikiUnkStmt *sql.Stmt
@@ -46,7 +46,7 @@ func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 		"UnknownUri"); err != nil {
 		return nil, err
 	}
-	if cd.hasCorStmt, err = SelectQuery(db, Corrections, 
+	if cd.hasCorStmt, err = SelectQuery(db, Corrections,
 		"InCity", "InState"); err != nil {
 		return nil, err
 	}
@@ -62,20 +62,20 @@ func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 		"UnknownUri"); err != nil {
 		return nil, err
 	}
-	if cd.getAllLocsStmt, err = SelectQuery(db, Locations, 
+	if cd.getAllLocsStmt, err = SelectQuery(db, Locations,
 		"LocCity", "LocState"); err != nil {
 		return nil, err
 	}
 	if cd.getAllCorrStmt, err = db.Prepare(
 		"SELECT InCity, InState FROM " +
-		Table(Corrections) +
-		" GROUP BY InCity, InState"); err != nil {
+			Table(Corrections) +
+			" GROUP BY InCity, InState"); err != nil {
 		return nil, err
 	}
 	if cd.getAllLoadStmt, err = db.Prepare(
 		"SELECT C, S FROM " +
-		Table(LoadCityStates) + 
-		" GROUP BY C, S"); err != nil {
+			Table(LoadCityStates) +
+			" GROUP BY C, S"); err != nil {
 		return nil, err
 	}
 	return cd, nil
@@ -110,10 +110,10 @@ func (cd *ConvoyData) AddGoogleUnknown(cs common.CityState) error {
 	return err
 }
 
-func (cd *ConvoyData) AddCorrection(from common.CityState, 
+func (cd *ConvoyData) AddCorrection(from common.CityState,
 	to common.CityState, det string) error {
 
-	if from.State != common.StateCode(from.State) || 
+	if from.State != common.StateCode(from.State) ||
 		to.State != common.StateCode(to.State) {
 		panic("StateCode() not applied")
 	}
@@ -121,7 +121,7 @@ func (cd *ConvoyData) AddCorrection(from common.CityState,
 	return err
 }
 
-func (cd *ConvoyData) AddLocation(cs common.CityState,  
+func (cd *ConvoyData) AddLocation(cs common.CityState,
 	loc geo.SphereCoords, uri string) error {
 	if cs.State != common.StateCode(cs.State) {
 		panic("StateCode() not applied")
@@ -133,7 +133,7 @@ func (cd *ConvoyData) AddLocation(cs common.CityState,
 	return err
 }
 
-func (cd *ConvoyData) ForAllMissingCities(csfunc func (common.CityState) error) error {
+func (cd *ConvoyData) ForAllMissingCities(csfunc func(common.CityState) error) error {
 	return ForAllCities(cd.missingStmt, csfunc)
 }
 
@@ -150,16 +150,16 @@ func (cd *ConvoyData) ShowAllLoads() {
 }
 
 func ForAllCities(
-	stmt *sql.Stmt, csfunc func (common.CityState) error) error {
+	stmt *sql.Stmt, csfunc func(common.CityState) error) error {
 	var city, state []byte
-	return ForAll(stmt, func () error {
+	return ForAll(stmt, func() error {
 		return csfunc(common.CityState{string(city),
 			string(state)})
 	}, &city, &state)
 }
 
 func ShowAll(stmt *sql.Stmt) {
-	err := ForAllCities(stmt, func (cs common.CityState) error {
+	err := ForAllCities(stmt, func(cs common.CityState) error {
 		fmt.Println(cs)
 		return nil
 	})
@@ -167,8 +167,6 @@ func ShowAll(stmt *sql.Stmt) {
 		log.Println("Error in ShowAll", err)
 	}
 }
-
-
 
 // TODO(jmacd) Move this...
 // func printCityDistances(db *sql.DB, tree *geo.Tree) error {
@@ -187,7 +185,7 @@ func ShowAll(stmt *sql.Stmt) {
 // 		geo.LatLongDegreesToCoords(lat, long, coords[:])
 // 		near := tree.FindNearest(coords[:])
 // 		dist := geo.GreatCircleDistance(near.Point(), coords[:])
-// 		log.Printf("%v, %v @ %.2f,%.2f nearest %.2fkm", 
+// 		log.Printf("%v, %v @ %.2f,%.2f nearest %.2fkm",
 // 			string(city), string(state), lat, long, dist / 1000.0)
 // 	}, &city, &state, &lat, &long); err != nil {
 // 		return err

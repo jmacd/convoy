@@ -8,8 +8,7 @@ func TestGCD(t *testing.T) {
 	LatLongDegreesToCoords(
 		SphereCoords{StringToDegrees("40°38′23″N"),
 			StringToDegrees("73°46′44″W")}, JFK[:])
-	
-	
+
 	LatLongDegreesToCoords(
 		SphereCoords{StringToDegrees("37°37′09″N"),
 			StringToDegrees("122°22′31″W")}, SFO[:])

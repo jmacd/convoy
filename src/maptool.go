@@ -11,26 +11,27 @@ import "common"
 import "data"
 import "geo"
 import "maps"
+
 //import "graph"
 
 var input = flag.String("input", "", "OSM PBF formatted file")
 
-var highwayTypes = map[string]bool {
-	"motorway": true,
-	"motorway_link": true,
-	"trunk": true,
-	"trunk_link": true,
-	"primary": true,
-	"primary_link": true,
-	"secondary": true,
+var highwayTypes = map[string]bool{
+	"motorway":       true,
+	"motorway_link":  true,
+	"trunk":          true,
+	"trunk_link":     true,
+	"primary":        true,
+	"primary_link":   true,
+	"secondary":      true,
 	"secondary_link": true,
-	"tertiary": true,
-	"tertiary_link": true,
-	"living_street": false,
-	"residential": false,
-	"unclassified": false,
-	"service": false,
-	"road": false,
+	"tertiary":       true,
+	"tertiary_link":  true,
+	"living_street":  false,
+	"residential":    false,
+	"unclassified":   false,
+	"service":        false,
+	"road":           false,
 }
 
 type nodeId uint32
@@ -45,16 +46,16 @@ type mapData1 struct {
 	// The set of node IDs we wish to keep during the following
 	// scan and renumberings into a (32-bit dense ID number,
 	// 32-bit count of outgoing edges)
-	mapIds map[mapId]mapCount
+	mapIds     map[mapId]mapCount
 	nextNodeId nodeId
 	totalEdges uint32
 }
 
 type node struct {
-	id nodeId
-	position [3]geo.EarthLoc
+	id                  nodeId
+	position            [3]geo.EarthLoc
 	treeLeft, treeRight nodeId
-	neighbors []nodeId
+	neighbors           []nodeId
 }
 
 type mapData2 struct {
@@ -85,7 +86,7 @@ func (md *mapData1) mapPass1(bd *maps.BlockData) {
 		md.totalEdges += uint32(len(way.Refs)) - 1
 		for e, ref := range way.Refs {
 			var edges uint32
-			if e == 0 || e == (len(way.Refs) - 1) {
+			if e == 0 || e == (len(way.Refs)-1) {
 				edges = 1
 			} else {
 				edges = 2
@@ -146,7 +147,7 @@ func (md *mapData2) mapPass2(bd *maps.BlockData, md1 *mapData1) {
 			}
 			md.addEdges(mc0.id, mc1.id)
 		}
-	}	
+	}
 }
 
 func readInput() io.Reader {
@@ -160,7 +161,7 @@ func readInput() io.Reader {
 
 func newMapData1() *mapData1 {
 	return &mapData1{
-		mapIds: make(map[mapId]mapCount),
+		mapIds:     make(map[mapId]mapCount),
 		nextNodeId: nodeId(1),
 		totalEdges: 0,
 	}
@@ -169,13 +170,13 @@ func newMapData1() *mapData1 {
 func newMapData2(md1 *mapData1) *mapData2 {
 	md2 := &mapData2{
 		make([]node, md1.nextNodeId),
-		make([]nodeId, md1.totalEdges * 2),
+		make([]nodeId, md1.totalEdges*2),
 	}
 	ei := 0
 	c := 0
 	for _, mc := range md1.mapIds {
 		np := &md2.nodes[mc.id]
-		np.neighbors = md2.edges[ei:ei+int(mc.ec)]
+		np.neighbors = md2.edges[ei : ei+int(mc.ec)]
 		ei += int(mc.ec)
 		c++
 	}
@@ -201,24 +202,24 @@ func main() {
 	osm := maps.NewMap()
 
 	md1 := newMapData1()
-	if err := osm.ReadMap(readInput(), func (bd *maps.BlockData) {
+	if err := osm.ReadMap(readInput(), func(bd *maps.BlockData) {
 		md1.mapPass1(bd)
 	}); err != nil {
 		log.Fatalln("Error reading map:", *input, ":", err)
 	}
 	common.PrintMem()
-	log.Println("Using", md1.nextNodeId, "nodes, have", 
+	log.Println("Using", md1.nextNodeId, "nodes, have",
 		md1.totalEdges, "edges")
 
 	md2 := newMapData2(md1)
-	if err := osm.ReadMap(readInput(), func (bd *maps.BlockData) {
+	if err := osm.ReadMap(readInput(), func(bd *maps.BlockData) {
 		md2.mapPass2(bd, md1)
 	}); err != nil {
 		log.Fatalln("Error reading map:", *input, ":", err)
 	}
 	md1 = nil
 	common.PrintMem()
-	
+
 	// Sanity check: should have filled-in all edges
 	for _, e := range md2.edges {
 		if e == nodeId(0) {
@@ -243,7 +244,7 @@ func (n *node) Point() geo.Coords {
 
 func (n *node) Left(g geo.Graph) geo.Vertex {
 	if n.treeLeft == 0 {
-		return nil 
+		return nil
 	}
 	return &g.(*mapData2).nodes[n.treeLeft]
 }
@@ -268,7 +269,7 @@ func (n *node) SetRight(g geo.Graph, v geo.Vertex) {
 }
 
 func (n *node) String() string {
-	return fmt.Sprintf("(%v:%v,%v,%v)", 
+	return fmt.Sprintf("(%v:%v,%v,%v)",
 		n.id, n.position[0], n.position[1], n.position[2])
 }
 
@@ -277,5 +278,5 @@ func (md *mapData2) Count() int {
 }
 
 func (md *mapData2) Node(i int) geo.Vertex {
-	return &md.nodes[i + 1]
+	return &md.nodes[i+1]
 }

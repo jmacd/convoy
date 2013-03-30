@@ -5,13 +5,13 @@ import "code.google.com/p/go.net/html"
 import "code.google.com/p/go.net/html/atom"
 
 type parseArgs struct {
-	atom atom.Atom
-	attr string
-	nodefunc func (value string) func (text string)
+	atom     atom.Atom
+	attr     string
+	nodefunc func(value string) func(text string)
 }
 
-func ParseXml(xml []byte, atom atom.Atom, attr string, 
-	nodefunc func (value string) func (text string)) error {
+func ParseXml(xml []byte, atom atom.Atom, attr string,
+	nodefunc func(value string) func(text string)) error {
 	doc, err := html.Parse(bytes.NewReader(xml))
 	if err != nil {
 		return err

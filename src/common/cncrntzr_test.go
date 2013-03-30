@@ -13,11 +13,11 @@ func tree(n int, o chan<- bool, c *Concurrentizer) {
 		return
 	}
 	h := n / 2
-	c.Do(h, func (ccon *Concurrentizer) {
+	c.Do(h, func(ccon *Concurrentizer) {
 		tree(h, o, ccon)
 	})
-	c.Do(n - h, func (ccon *Concurrentizer) {
-		tree(n - h, o, ccon)
+	c.Do(n-h, func(ccon *Concurrentizer) {
+		tree(n-h, o, ccon)
 	})
 	c.Wait()
 }
@@ -27,7 +27,7 @@ func TestCon(t *testing.T) {
 	const N = 100000
 	c := NewConcurrentizer(10)
 	o := make(chan bool, N+1)
-	c.Do(N, func (ccon *Concurrentizer) {
+	c.Do(N, func(ccon *Concurrentizer) {
 		tree(N, o, ccon)
 	}).Wait()
 	close(o)

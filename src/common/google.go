@@ -9,20 +9,20 @@ import "net/url"
 import "strings"
 
 const (
-	googleHost = "www.googleapis.com"
+	googleHost    = "www.googleapis.com"
 	googleBaseUri = "/customsearch/v1"
 
 	// jmacd.llc
-	googleCx = "018438991833677974599:jcnnzea70bm"
+	googleCx  = "018438991833677974599:jcnnzea70bm"
 	googleKey = "AIzaSyDuCc1O8CPy7FmT6_Q6XfqYtdNcCqTEHDg"
-	
+
 	// josh.macdonald
 	//googleCx = "009758624066673491715:ot7tq3iqsbq"
 	//googleKey = "AIzaSyAoocCn9R3G1PH9DoOFwASBa4ONZHWIWrk"
 
 )
 
-var wikiLinkRe = regexp.MustCompile(`http://` + 
+var wikiLinkRe = regexp.MustCompile(`http://` +
 	regexp.QuoteMeta(WikiHost) + WikiBaseUri + `(.*)`)
 
 var stripSiteRe = regexp.MustCompile(`(.*) site:.*`)
@@ -30,15 +30,15 @@ var stripSiteRe = regexp.MustCompile(`(.*) site:.*`)
 func CorrectCitySpelling(name CityState) (CityState, string, string, error) {
 	spaceState := " " + name.State
 	query := name.City + spaceState + " site:" + WikiHost
-	googQuery := "?q=" + url.QueryEscape(query) + "&cx=" + 
+	googQuery := "?q=" + url.QueryEscape(query) + "&cx=" +
 		googleCx + "&key=" + googleKey + "&hl=en"
- 	googXml, err := GetSecureUrl(googleHost, googleBaseUri, googQuery)
- 	if err != nil {
+	googXml, err := GetSecureUrl(googleHost, googleBaseUri, googQuery)
+	if err != nil {
 		return CityState{}, "", "", nil
 	}
 	var res interface{}
 	if err = json.Unmarshal(googXml, &res); err != nil {
- 		log.Print("Google gave bad JSON: ", string(googXml))
+		log.Print("Google gave bad JSON: ", string(googXml))
 		return CityState{}, "", "", nil
 	}
 	jso := res.(map[string]interface{})
@@ -50,8 +50,8 @@ func CorrectCitySpelling(name CityState) (CityState, string, string, error) {
 	// if true {
 	// 	var buf bytes.Buffer
 	// 	json.Indent(&buf, googXml, "", "\t")
- 	// 	log.Print("Google JSON: ", string(buf.Bytes()))
-        // }
+	// 	log.Print("Google JSON: ", string(buf.Bytes()))
+	// }
 	spellName := name
 	if spell, has := jso["spelling"]; has {
 		jsoSpell := spell.(map[string]interface{})
@@ -60,8 +60,8 @@ func CorrectCitySpelling(name CityState) (CityState, string, string, error) {
 			case string:
 				m := stripSiteRe.FindStringSubmatch(cv)
 				if len(m) != 0 && strings.HasSuffix(m[1], spaceState) {
-					spellName = CityState{m[1][:len(m[1]) - 
-							len(spaceState)], name.State}
+					spellName = CityState{m[1][:len(m[1])-
+						len(spaceState)], name.State}
 					//log.Println("Spelling", name, "->", spellName)
 				}
 			}

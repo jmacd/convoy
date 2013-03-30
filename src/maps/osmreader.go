@@ -20,30 +20,30 @@ var (
 
 type Map struct {
 	numNodes, numWays, numRels int64
-	blockCh chan *osm.Blob
-	graphCh chan *BlockData
-	doneCh chan bool
+	blockCh                    chan *osm.Blob
+	graphCh                    chan *BlockData
+	doneCh                     chan bool
 }
 
 type BlockData struct {
 	Nodes []Node
-	Ways []Way
-	Rels []Relation
+	Ways  []Way
+	Rels  []Relation
 }
 
 type blockParams struct {
-	strings [][]byte
+	strings     [][]byte
 	granularity int64
-	latOffset int64
-	lonOffset int64
+	latOffset   int64
+	lonOffset   int64
 }
 
 type MemberType int
 
 const (
-    NODE = 0
-    WAY = 1
-    RELATION = 2
+	NODE     = 0
+	WAY      = 1
+	RELATION = 2
 )
 
 type Attribute struct {
@@ -53,34 +53,34 @@ type Attribute struct {
 type Attributes []Attribute
 
 type Node struct {
-	Id int64
+	Id        int64
 	Lat, Long float64
-	Attrs Attributes
+	Attrs     Attributes
 }
 
 type Way struct {
-	Id int64
+	Id    int64
 	Attrs Attributes
-	Refs []int64
+	Refs  []int64
 }
 
 type RelEntry struct {
 	Member int64
-	Type MemberType
-	Role string
+	Type   MemberType
+	Role   string
 }
 
 type Relation struct {
-	Id int64
+	Id    int64
 	Attrs Attributes
-	Ents []RelEntry
+	Ents  []RelEntry
 }
 
 func NewMap() *Map {
 	return &Map{
 		blockCh: make(chan *osm.Blob),
 		graphCh: make(chan *BlockData),
-		doneCh: make(chan bool),
+		doneCh:  make(chan bool),
 	}
 }
 
@@ -122,8 +122,8 @@ func decodeDenseNodes(dn *osm.DenseNodes, bp *blockParams) ([]Node, error) {
 		llon += lons[i]
 		n := &nodes[i]
 		n.Id = lid
-		n.Lat = 1e-9 * float64(bp.latOffset + (bp.granularity * llat))
-		n.Long = 1e-9 * float64(bp.lonOffset + (bp.granularity * llon))
+		n.Lat = 1e-9 * float64(bp.latOffset+(bp.granularity*llat))
+		n.Long = 1e-9 * float64(bp.lonOffset+(bp.granularity*llon))
 		if kvi < len(kvs) {
 			for kvi < len(kvs) && kvs[kvi] != 0 {
 				key := string(bp.strings[kvs[kvi]])
@@ -170,7 +170,7 @@ func decodeRelation(prel *osm.Relation, rel *Relation, bp *blockParams) error {
 		rel.Ents[i].Type = MemberType(prel.GetTypes()[i])
 	}
 	return nil
-	
+
 }
 
 func decodeWays(pways []*osm.Way, bp *blockParams) ([]Way, error) {
@@ -195,10 +195,10 @@ func decodeRelations(prels []*osm.Relation, bp *blockParams) ([]Relation, error)
 
 func decodeBlock(pb *osm.PrimitiveBlock) (*BlockData, error) {
 	bparams := &blockParams{
-		pb.GetStringtable().GetS(), 
+		pb.GetStringtable().GetS(),
 		int64(pb.GetGranularity()),
-		pb.GetLatOffset(), 
-		pb.GetLonOffset() }
+		pb.GetLatOffset(),
+		pb.GetLonOffset()}
 	bdata := &BlockData{}
 	for _, pg := range pb.GetPrimitivegroup() {
 		for _, _ = range pg.GetNodes() {
@@ -248,16 +248,16 @@ func (m *Map) decodeBlockFunc() {
 		}
 		bd, err := m.processBlock(blob)
 		if err != nil {
-			log.Print("Block decode failed!")  // @@@ TODO(jmacd)
+			log.Print("Block decode failed!") // @@@ TODO(jmacd)
 			continue
 		}
-		
+
 		m.graphCh <- bd
 	}
 	m.graphCh <- nil
 }
 
-func (m *Map) buildGraph(bf func (*BlockData)) {
+func (m *Map) buildGraph(bf func(*BlockData)) {
 	nils := 0
 	for bd := range m.graphCh {
 		if bd == nil {
@@ -321,17 +321,17 @@ func readHeader(b *osm.Blob) error {
 		case "DenseNodes":
 			haveDense = true
 		default:
-			return errors.New("Unknown map required feature:" + rf);
+			return errors.New("Unknown map required feature:" + rf)
 		}
 	}
 	if !haveVersion || !haveDense {
-		return errors.New("Unsupported map type: " + 
+		return errors.New("Unsupported map type: " +
 			proto.CompactTextString(&hdrblock))
 	}
 	return nil
 }
 
-func (m *Map) ReadMap(file io.Reader, bf func (*BlockData)) error {
+func (m *Map) ReadMap(file io.Reader, bf func(*BlockData)) error {
 	var nread int64
 	for i := 0; i < numReaderProcs; i++ {
 		go m.decodeBlockFunc()
@@ -364,7 +364,7 @@ func (m *Map) ReadMap(file io.Reader, bf func (*BlockData)) error {
 		if err = proto.Unmarshal(headb, &bh); err != nil {
 			return err
 		}
-		
+
 		// Read the blob itself
 		bsize := bh.GetDatasize()
 		if bsize <= 0 {
@@ -375,7 +375,7 @@ func (m *Map) ReadMap(file io.Reader, bf func (*BlockData)) error {
 			return err
 		}
 		nread += int64(bsize)
-		
+
 		// Unmarshal the blob
 		blob := &osm.Blob{}
 		if err = proto.Unmarshal(blobb, blob); err != nil {
@@ -391,15 +391,15 @@ func (m *Map) ReadMap(file io.Reader, bf func (*BlockData)) error {
 		case "OSMData":
 			m.blockCh <- blob
 		default:
-			return errors.New("Unknown OSM blob type: " + 
+			return errors.New("Unknown OSM blob type: " +
 				bh.GetType())
 		}
 	}
 	for i := 0; i < numReaderProcs; i++ {
 		m.blockCh <- nil
 	}
-	<- m.doneCh
-	log.Println("Finished reading", nread, "bytes", 
+	<-m.doneCh
+	log.Println("Finished reading", nread, "bytes",
 		m.numNodes, "nodes",
 		m.numWays, "ways",
 		m.numRels, "relations")

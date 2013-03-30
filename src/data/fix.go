@@ -6,7 +6,7 @@ import "log"
 import "common"
 
 func FixCityNames(db *sql.DB, table, column string) error {
-	query := "SELECT DISTINCT (" + column + ") COLLATE utf8_bin FROM " + table;
+	query := "SELECT DISTINCT (" + column + ") COLLATE utf8_bin FROM " + table
 	rows, err := db.Query(query)
 	if err != nil {
 		return err
@@ -46,4 +46,3 @@ func FixCityNames(db *sql.DB, table, column string) error {
 	}
 	return nil
 }
-

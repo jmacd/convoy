@@ -30,20 +30,20 @@ func (cf *CityFinder) getLocFromWiki(uri string) (geo.SphereCoords, []byte, erro
 	if err != nil {
 		return c, nil, err
 	}
-	err = scraper.ParseXml(xml, atom.Span, "class", 
-		func (value string) func (text string) {
-		switch value {
-		case "latitude":
-			return func (text string) {
-				c.Lat = common.StringToDegrees(text)
+	err = scraper.ParseXml(xml, atom.Span, "class",
+		func(value string) func(text string) {
+			switch value {
+			case "latitude":
+				return func(text string) {
+					c.Lat = common.StringToDegrees(text)
+				}
+			case "longitude":
+				return func(text string) {
+					c.Long = common.StringToDegrees(text)
+				}
 			}
-		case "longitude":
-			return func (text string) {
-				c.Long = common.StringToDegrees(text)
-			}
-		}
-		return nil
-	})
+			return nil
+		})
 	return c, xml, nil
 }
 
@@ -55,7 +55,7 @@ func (cf *CityFinder) tryLocFromWiki(urip *string, csp *common.CityState, spellD
 	}
 	if hasUnk {
 		return c, nil
-	}	
+	}
 	c, xml, err := cf.getLocFromWiki(*urip)
 	if err != nil {
 		return c, err
@@ -65,9 +65,9 @@ func (cf *CityFinder) tryLocFromWiki(urip *string, csp *common.CityState, spellD
 	}
 	ambiguous := false
 	uris := []string{}
-	err = scraper.ParseXml(xml, atom.A, "href", 
-		func (value string) func (text string) {
- 			if value == common.WikiDisambiguationUri {
+	err = scraper.ParseXml(xml, atom.A, "href",
+		func(value string) func(text string) {
+			if value == common.WikiDisambiguationUri {
 				ambiguous = true
 			}
 			uris = append(uris, value)
@@ -97,7 +97,7 @@ func (cf *CityFinder) tryLocFromWiki(urip *string, csp *common.CityState, spellD
 	}
 	return c, nil
 }
-	
+
 func (cf *CityFinder) tryFindingCoords(
 	missing, spelling common.CityState, wikiUri, spellDet string) (bool, error) {
 	hasLoc, err := cf.HasLocation(spelling)
@@ -124,12 +124,12 @@ func (cf *CityFinder) tryFindingCoords(
 	}
 	spelling.State = common.StateCode(spelling.State)
 	if missing.Equals(spelling) {
- 		hasCor, err := cf.HasCorrection(missing)
+		hasCor, err := cf.HasCorrection(missing)
 		if err != nil {
 			return false, err
 		}
 		if !hasCor {
-			log.Printf("(%s) -> (%s) correction added (%s)", 
+			log.Printf("(%s) -> (%s) correction added (%s)",
 				missing, spelling, wikiUri)
 			err = cf.AddCorrection(missing, spelling, spellDet)
 			if err != nil {
@@ -193,7 +193,7 @@ func (cf *CityFinder) tryMissingCity(missing common.CityState) error {
 
 func (cf *CityFinder) findMissingCities() error {
 	count := 0
-	ret := cf.ForAllMissingCities(func (cs common.CityState) error {
+	ret := cf.ForAllMissingCities(func(cs common.CityState) error {
 		count++
 		if *dry_run {
 			log.Println("Missing", cs)
@@ -227,7 +227,7 @@ func main() {
 
 	cf, err := NewCityFinder(db)
 	if err != nil {
-		log.Fatal("NewCityFinder failed", err)		
+		log.Fatal("NewCityFinder failed", err)
 	}
 
 	switch {

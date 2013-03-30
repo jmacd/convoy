@@ -16,8 +16,8 @@ const (
 )
 
 var (
-	client      *http.Client
-	secure      *http.Client
+	client *http.Client
+	secure *http.Client
 )
 
 func init() {
@@ -28,12 +28,12 @@ func init() {
 	// Seems to be a problem _only_ when a proxy is involved.
 
 	client = &http.Client{
-		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
-			/* DisableCompression: true */},
+		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment
+		/* DisableCompression: true */},
 	}
 	secure = &http.Client{
 		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
-		TLSClientConfig: &tls.Config{RootCAs: nil},
+			TLSClientConfig: &tls.Config{RootCAs: nil},
 		},
 	}
 }

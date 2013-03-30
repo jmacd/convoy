@@ -9,12 +9,12 @@ import _ "github.com/Go-SQL-Driver/MySQL"
 type TableName string
 
 const (
-	Corrections TableName = "Corrections"
-	Locations TableName = "Locations"
-	TruckLoads TableName = "TruckLoads"
-	LoadCityStates TableName = "LoadCityStates"
-	GeoCityStates TableName = "GeoCityStates"
-	GoogleUnknown TableName = "GoogleUnknown"
+	Corrections      TableName = "Corrections"
+	Locations        TableName = "Locations"
+	TruckLoads       TableName = "TruckLoads"
+	LoadCityStates   TableName = "LoadCityStates"
+	GeoCityStates    TableName = "GeoCityStates"
+	GoogleUnknown    TableName = "GoogleUnknown"
 	WikipediaUnknown TableName = "WikipediaUnknown"
 )
 
@@ -26,7 +26,7 @@ func OpenDb() (*sql.DB, error) {
 		log.Fatal("Database not specified, use --db_name")
 	}
 	conn, err := sql.Open("mysql",
-		"test:@/" + *dbName + "?charset=utf8")
+		"test:@/"+*dbName+"?charset=utf8")
 	if err != nil {
 		return conn, err
 	}
@@ -60,7 +60,7 @@ func wherePlaceHolders(columns []string) string {
 }
 
 func InsertQuery(db *sql.DB, table TableName, columns ...string) (*sql.Stmt, error) {
-	return db.Prepare("INSERT INTO " + 
+	return db.Prepare("INSERT INTO " +
 		Table(table) + " (" + strings.Join(columns, ", ") + ") VALUES (" +
 		insertPlaceHolders(columns) + ")")
 }
@@ -85,7 +85,7 @@ func HasRows(s *sql.Stmt, a ...interface{}) (bool, error) {
 	return false, nil
 }
 
-func ForAll(stmt *sql.Stmt, afunc func () error, a ...interface{}) error {
+func ForAll(stmt *sql.Stmt, afunc func() error, a ...interface{}) error {
 	rows, err := stmt.Query()
 	if err != nil {
 		return err

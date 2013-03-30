@@ -20,12 +20,12 @@ func StringToDegrees(text string) float64 {
 	min, _ := strconv.ParseFloat(m[2], 64)
 	sec, _ := strconv.ParseFloat(m[3], 64)
 	dir := m[4]
-	
+
 	angle := deg + (min / 60.0) + (sec / 3600)
-	
+
 	if dir == "S" || dir == "W" {
-		angle = - angle
-	}	
+		angle = -angle
+	}
 
 	return angle
 }

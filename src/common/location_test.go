@@ -4,14 +4,14 @@ import "sort"
 import "testing"
 
 type expCheck struct {
-	in string
+	in  string
 	out []string
 }
 
 var expExpect = []expCheck{
-	{ "S Bend", []string{"South Bend"} },
-	{ "Gr Neck", []string{"Great Neck", "Grand Neck"} },
-	{ "Gdn Grove", []string{"Garden Grove"} },
+	{"S Bend", []string{"South Bend"}},
+	{"Gr Neck", []string{"Great Neck", "Grand Neck"}},
+	{"Gdn Grove", []string{"Garden Grove"}},
 }
 
 func TestExpansion(t *testing.T) {
@@ -31,11 +31,11 @@ func TestExpansion(t *testing.T) {
 	}
 }
 
-var propExpect = [][2]string {
+var propExpect = [][2]string{
 	[2]string{"The-intl airport", "The-Intl Airport"},
 	[2]string{"What EVER", "What Ever"},
-	[2]string{"Hartsfield–jackson Atlanta International Airport", 
-		  "Hartsfield–Jackson Atlanta International Airport"},
+	[2]string{"Hartsfield–jackson Atlanta International Airport",
+		"Hartsfield–Jackson Atlanta International Airport"},
 }
 
 func TestProper(t *testing.T) {
@@ -43,11 +43,11 @@ func TestProper(t *testing.T) {
 		r := ProperName(ep[0])
 		if r != ep[1] {
 			t.Errorf("Bad proper name %q != %q", r, ep[1])
-		} 
+		}
 	}
 }
 
-var cityExpect = [][2]string {
+var cityExpect = [][2]string{
 	[2]string{"http://en.wikipedia.org/wiki/Foo,_Wisconsin", "Foo, WI"},
 	[2]string{"/wiki/Bar,_California", "Bar, CA"},
 	[2]string{"/wiki/Place_In_The_Sun", ""},

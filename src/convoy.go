@@ -217,7 +217,7 @@ func response(w http.ResponseWriter, r *http.Request) {
 }
 
 // loadBoard produces items for scraping on the channel.
-func loadBoard(loadf func ([]*boards.Load) error) (boards.LoadBoard, error) {
+func loadBoard(loadf func([]*boards.Load) error) (boards.LoadBoard, error) {
 	tt, err := boards.NewTrulos(loadf)
 	if err != nil {
 		return nil, err
@@ -246,7 +246,7 @@ func saveLoad(stmt *sql.Stmt, scrapeId int64, load *boards.Load) error {
 	return err
 }
 
-func processLoads(stmt *sql.Stmt, scrapeId int64, 
+func processLoads(stmt *sql.Stmt, scrapeId int64,
 	loads []*boards.Load) error {
 	for _, load := range loads {
 		if err := saveLoad(stmt, scrapeId, load); err != nil {
@@ -261,7 +261,7 @@ func startScrape(pageCh chan<- scraper.Page, quitCh chan<- int) {
 	if err != nil {
 		log.Fatal("Couldn't connect to database: ", err)
 	}
-	result, err := conn.Exec("INSERT INTO " + data.Table("Scrapes") + 
+	result, err := conn.Exec("INSERT INTO " + data.Table("Scrapes") +
 		" (StartTime) VALUES (NOW())")
 	if err != nil {
 		log.Fatal("Could not insert new Scrape: ", err)
@@ -272,14 +272,14 @@ func startScrape(pageCh chan<- scraper.Page, quitCh chan<- int) {
 	}
 	stmt, err := conn.Prepare(
 		"INSERT INTO " + data.Table("TruckLoads") +
-		" (ScrapeId, PickupDate, OriginState, OriginCity, " +
-		"DestState, DestCity, LoadType, Length, " +
-		"Weight, Equipment, Price, Stops, Phone) " +
-		" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+			" (ScrapeId, PickupDate, OriginState, OriginCity, " +
+			"DestState, DestCity, LoadType, Length, " +
+			"Weight, Equipment, Price, Stops, Phone) " +
+			" VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
 	if err != nil {
 		log.Fatal("Could not prepare INSERT statement")
 	}
-	board, err := loadBoard(func (loads []*boards.Load) error {
+	board, err := loadBoard(func(loads []*boards.Load) error {
 		return processLoads(stmt, scrapeId, loads)
 	})
 	if err != nil {
@@ -287,8 +287,8 @@ func startScrape(pageCh chan<- scraper.Page, quitCh chan<- int) {
 	}
 	log.Print("Starting ", data.Table("ScrapeId"), " = ", scrapeId)
 	board.Read(pageCh)
-	_, err = conn.Exec("UPDATE " + data.Table("Scrapes") + 
-		" SET FinishTime = NOW() " + 
+	_, err = conn.Exec("UPDATE "+data.Table("Scrapes")+
+		" SET FinishTime = NOW() "+
 		"WHERE ScrapeId = ?", scrapeId)
 	conn.Close()
 	quitCh <- 1
@@ -300,7 +300,7 @@ func startServer(pageCh <-chan scraper.Page) (*scraper.Browser, error) {
 	http.HandleFunc("/", handle)
 
 	return scraper.NewBrowser(
-		*http_port, *xvfb_port_offset, "/scrape", 
+		*http_port, *xvfb_port_offset, "/scrape",
 		http.DefaultServeMux)
 }
 
@@ -317,5 +317,5 @@ func main() {
 
 	go startScrape(pageCh, quitCh)
 
-	<- quitCh
+	<-quitCh
 }

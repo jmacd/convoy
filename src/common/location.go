@@ -5,18 +5,18 @@ import "regexp"
 import "strings"
 
 const (
-	WikiHost = "en.wikipedia.org"
-	WikiBaseUri = "/wiki/"
+	WikiHost              = "en.wikipedia.org"
+	WikiBaseUri           = "/wiki/"
 	WikiDisambiguationUri = "/wiki/Help:Disambiguation"
 )
 
 var (
 	cityStateRe = regexp.MustCompile(`(.*), ([^,]+)`)
-	separators = []string{
-		" ",  // Space
-		"–",  // N-dash
-		"—",  // M-dash
-		"―",  // Figure-dash
+	separators  = []string{
+		" ", // Space
+		"–", // N-dash
+		"—", // M-dash
+		"―", // Figure-dash
 	}
 )
 
@@ -25,7 +25,7 @@ type CityState struct {
 }
 
 // Maps 2-character state codes to full names
-var	stateMap =  map[string]string {
+var stateMap = map[string]string{
 	// USA
 	"AK": "Alaska",
 	"AL": "Alabama",
@@ -77,7 +77,7 @@ var	stateMap =  map[string]string {
 	"WA": "Washington",
 	"WI": "Wisconsin",
 	"WV": "West Virginia",
-	"WY": "Wyoming", 
+	"WY": "Wyoming",
 
 	// Canada
 	"AB": "Alberta",
@@ -103,77 +103,77 @@ var	stateMap =  map[string]string {
 
 var reverseStateMap = map[string]string{}
 
-var expansions = map[string][]string {
-	"S": []string{"South"},
+var expansions = map[string][]string{
+	"S":  []string{"South"},
 	"So": []string{"North"},
-	"W": []string{"West"},
+	"W":  []string{"West"},
 	"No": []string{"North"},
-	"N": []string{"North"},
-	"E": []string{"East"},
+	"N":  []string{"North"},
+	"E":  []string{"East"},
 
-	"Afb": []string{"Air Force Base"},
-	"Ap": []string{"Airport"},
+	"Afb":   []string{"Air Force Base"},
+	"Ap":    []string{"Airport"},
 	"Arprt": []string{"Airport"},
-	"Bch": []string{"Beach"},
-	"Brdg": []string{"Bridge"},
-	"Brg": []string{"Bridge"},
-	"Brch": []string{"Branch"},
-	"Brk": []string{"Brook"},
-	"Blf": []string{"Bluff"},
-	"Blfs": []string{"Bluffs"},
-	"Ci": []string{"City"},
-	"Cit": []string{"City"},
-	"Ch": []string{"Courthouse"},
-	"Clg": []string{"College"},
-	"Crk": []string{"Creek"},
-	"Ctr": []string{"Center"},
-	"Ct": []string{"Court"},
+	"Bch":   []string{"Beach"},
+	"Brdg":  []string{"Bridge"},
+	"Brg":   []string{"Bridge"},
+	"Brch":  []string{"Branch"},
+	"Brk":   []string{"Brook"},
+	"Blf":   []string{"Bluff"},
+	"Blfs":  []string{"Bluffs"},
+	"Ci":    []string{"City"},
+	"Cit":   []string{"City"},
+	"Ch":    []string{"Courthouse"},
+	"Clg":   []string{"College"},
+	"Crk":   []string{"Creek"},
+	"Ctr":   []string{"Center"},
+	"Ct":    []string{"Court"},
 	"Cthse": []string{"Courthouse"},
-	"Crt": []string{"Court"},
-	"Cy": []string{"City"},
-	"Depo": []string{"Depot"},
-	"Fk": []string{"Fork"},
-	"Fks": []string{"Forks"},
-	"Fls": []string{"Falls"},
-	"Forg": []string{"Forge"},
-	"Frg": []string{"Forge"},
-	"Ft": []string{"Fort"},
-	"Gdn": []string{"Garden"},
-	"Gr": []string{"Great", "Grand"},
-	"Grv": []string{"Grove"},
-	"Gln": []string{"Glen"},
-	"Hbr": []string{"Harbor"},
-	"Hse": []string{"House"},
-	"Hgts": []string{"Heights"},
-	"Hts": []string{"Heights"},
-	"Is": []string{"Isle", "Island"},
-	"Intl": []string{"International"},
-	"Jct": []string{"Junction"},
-	"Lk": []string{"Lake"},
-	"Mt": []string{"Mount", "Mountain"},
-	"Mtn": []string{"Mountain"},
-	"Pk": []string{"Park"},
-	"Pnt": []string{"Point"},
-	"Ps": []string{"Pass"},
-	"Pt": []string{"Point"},
-	"Ptr": []string{"Point"},
-	"Prtg": []string{"Portage"},
-	"Prt": []string{"Port"},
-	"Rdg": []string{"Ridge"},
-	"Rpds": []string{"Rapids"},
-	"Rvr": []string{"River"},
-	"Snta": []string{"Santa"},
-	"Spgs": []string{"Springs"},
-	"Spg": []string{"Spring"},
-	"Spr": []string{"Spring"},
-	"Sprs": []string{"Springs"},
-	"Sta": []string{"Station"},
-	"St": []string{"Saint"},
-	"Univ": []string{"University"},
-	"Wht": []string{"White"},
-	"Wks": []string{"Works"},
-	"Vly": []string{"Valley"},
-	"Vla": []string{"Villa"},
+	"Crt":   []string{"Court"},
+	"Cy":    []string{"City"},
+	"Depo":  []string{"Depot"},
+	"Fk":    []string{"Fork"},
+	"Fks":   []string{"Forks"},
+	"Fls":   []string{"Falls"},
+	"Forg":  []string{"Forge"},
+	"Frg":   []string{"Forge"},
+	"Ft":    []string{"Fort"},
+	"Gdn":   []string{"Garden"},
+	"Gr":    []string{"Great", "Grand"},
+	"Grv":   []string{"Grove"},
+	"Gln":   []string{"Glen"},
+	"Hbr":   []string{"Harbor"},
+	"Hse":   []string{"House"},
+	"Hgts":  []string{"Heights"},
+	"Hts":   []string{"Heights"},
+	"Is":    []string{"Isle", "Island"},
+	"Intl":  []string{"International"},
+	"Jct":   []string{"Junction"},
+	"Lk":    []string{"Lake"},
+	"Mt":    []string{"Mount", "Mountain"},
+	"Mtn":   []string{"Mountain"},
+	"Pk":    []string{"Park"},
+	"Pnt":   []string{"Point"},
+	"Ps":    []string{"Pass"},
+	"Pt":    []string{"Point"},
+	"Ptr":   []string{"Point"},
+	"Prtg":  []string{"Portage"},
+	"Prt":   []string{"Port"},
+	"Rdg":   []string{"Ridge"},
+	"Rpds":  []string{"Rapids"},
+	"Rvr":   []string{"River"},
+	"Snta":  []string{"Santa"},
+	"Spgs":  []string{"Springs"},
+	"Spg":   []string{"Spring"},
+	"Spr":   []string{"Spring"},
+	"Sprs":  []string{"Springs"},
+	"Sta":   []string{"Station"},
+	"St":    []string{"Saint"},
+	"Univ":  []string{"University"},
+	"Wht":   []string{"White"},
+	"Wks":   []string{"Works"},
+	"Vly":   []string{"Valley"},
+	"Vla":   []string{"Villa"},
 }
 
 func init() {
@@ -291,7 +291,7 @@ func (cs CityState) String() string {
 }
 
 func (cs CityState) WikiUri() string {
-	return WikiBaseUri + 
+	return WikiBaseUri +
 		wikiProperName(cs.City) + ",_" + wikiProperName(cs.State)
 }
 
@@ -305,5 +305,5 @@ func ParseCityState(s string) (cs CityState) {
 		cs.City = m[1]
 		cs.State = m[2]
 	}
-	return 
+	return
 }

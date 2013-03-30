@@ -9,7 +9,7 @@ import "runtime"
 type testVertices []Vertex
 
 type testNode struct {
-	coord [3]EarthLoc
+	coord       [3]EarthLoc
 	left, right Vertex
 }
 
@@ -30,7 +30,7 @@ func (tn *testNode) Point() Coords {
 }
 
 func (tn *testNode) String() string {
-	return fmt.Sprintf("(%v,%v,%v)", 
+	return fmt.Sprintf("(%v,%v,%v)",
 		tn.coord[0], tn.coord[1], tn.coord[2])
 }
 

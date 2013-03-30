@@ -6,7 +6,7 @@ import "math"
 // Represent points in 3 dimensions, scaled to slightly larger than
 // the size of Earth
 const (
-	earthRadius      = 6371000  // Meters
+	earthRadius      = 6371000 // Meters
 	earthDiameter    = float64(earthRadius * 2)
 	earthPrecision   = float64(earthRadius) / float64(math.MaxInt32)
 	invEarthDiameter = 1.0 / earthDiameter
@@ -18,7 +18,7 @@ type EarthLoc int32
 type Coords []EarthLoc
 
 type SphereCoords struct {
-	Lat, Long float64  // In degrees
+	Lat, Long float64 // In degrees
 }
 
 // Square of distance between two points; actual distance is a chord
@@ -36,7 +36,7 @@ func (sc SphereCoords) Defined() bool {
 }
 
 func degreeToRad(deg float64) float64 {
-	if (deg < -180.0 || deg >= 180.0) {
+	if deg < -180.0 || deg >= 180.0 {
 		panic(fmt.Sprintf("Degree out of range: %.12f", deg))
 	}
 	return deg * math.Pi / 180.0
@@ -58,9 +58,9 @@ func squareEarthLoc(x EarthLoc) compDistance {
 }
 
 func comparableDistance(p0, p1 Coords) compDistance {
-	return squareEarthLoc(p0[0] - p1[0]) +
-		squareEarthLoc(p0[1] - p1[1]) +
-		squareEarthLoc(p0[2] - p1[2])
+	return squareEarthLoc(p0[0]-p1[0]) +
+		squareEarthLoc(p0[1]-p1[1]) +
+		squareEarthLoc(p0[2]-p1[2])
 }
 
 func squareRealLoc(x float64) float64 {
@@ -69,9 +69,9 @@ func squareRealLoc(x float64) float64 {
 
 func chordLength(p0, p1 Coords) float64 {
 	return math.Sqrt(
-		squareRealLoc(float64(p0[0] - p1[0]) * earthPrecision) +
-		squareRealLoc(float64(p0[1] - p1[1]) * earthPrecision) +
-		squareRealLoc(float64(p0[2] - p1[2]) * earthPrecision))
+		squareRealLoc(float64(p0[0]-p1[0])*earthPrecision) +
+			squareRealLoc(float64(p0[1]-p1[1])*earthPrecision) +
+			squareRealLoc(float64(p0[2]-p1[2])*earthPrecision))
 }
 
 func GreatCircleDistance(p0, p1 Coords) float64 {

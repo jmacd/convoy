@@ -29,13 +29,13 @@ const (
 )
 
 type trulosBoard struct {
-	host    string
-	stateUriRe *regexp.Regexp
-	equipRe *regexp.Regexp
-	pageRe  *regexp.Regexp
+	host        string
+	stateUriRe  *regexp.Regexp
+	equipRe     *regexp.Regexp
+	pageRe      *regexp.Regexp
 	stateProcRe *regexp.Regexp
-	loadf   func ([]*Load) error
-	states  []*trulosState
+	loadf       func([]*Load) error
+	states      []*trulosState
 }
 
 type trulosState struct {
@@ -60,7 +60,7 @@ func NewTrulos(loadf func([]*Load) error) (LoadBoard, error) {
 	equipRe := regexp.MustCompile(`\?STATE=(?:\w+)&amp;Equipment=([ /\w]+)`)
 	pageRe := regexp.MustCompile(pageRegexp)
 	stateProcRe := regexp.MustCompile(*stateRe)
-	board := &trulosBoard{"www.trulos.com", 
+	board := &trulosBoard{"www.trulos.com",
 		stateUriRe, equipRe, pageRe, stateProcRe,
 		loadf, nil}
 	return board, nil
@@ -105,7 +105,7 @@ func (t *trulosBoard) Read(pages chan<- scraper.Page) {
 		}
 		state.getEquipmentTypes()
 		for _, equip := range state.equipmentTypes {
-			//log.Println("Reading Trulos state", 
+			//log.Println("Reading Trulos state",
 			//            state.name, equip)
 			query := state.queryForEquip(equip)
 			body, err := common.GetUrl(t.host, baseUri, query)
@@ -118,28 +118,28 @@ func (t *trulosBoard) Read(pages chan<- scraper.Page) {
 			for i := 0; i < len(actions); i++ {
 				actions[i] = html.UnescapeString(actions[i])
 			}
-			scrape := &trulosScrape{state, equip, 
+			scrape := &trulosScrape{state, equip,
 				HijackExternalRefs(body), actions,
-			        compCh, make(chan *scraper.Result), 
+				compCh, make(chan *scraper.Result),
 				nil}
 			// Process len(actions) + 1 pages, block until
 			// completion.
 			go scrape.ProcessScrapes()
 			pages <- scrape
-			<- compCh
+			<-compCh
 		}
 	}
 }
 
 func (s *trulosScrape) ProcessScrapes() {
 	for i := 0; i <= len(s.actions); i++ {
-		s.Process(<- s.respCh)
+		s.Process(<-s.respCh)
 	}
 	if err := s.state.board.loadf(s.loads); err != nil {
 		log.Printf("Error writing %d loads: %s: %s",
 			len(s.loads), s, err)
 	} else {
-		log.Printf("Wrote %d loads: %s", len(s.loads), s)	
+		log.Printf("Wrote %d loads: %s", len(s.loads), s)
 	}
 	s.compCh <- 1
 }
@@ -268,7 +268,7 @@ func (s *trulosScrape) ProcessRowData(row []string) {
 		weight *= 1000 // Assume per thousand pounds
 	}
 	phone := trimmed[15]
-	load := &Load{date, common.ProperName(origin), s.state.name, 
+	load := &Load{date, common.ProperName(origin), s.state.name,
 		common.ProperName(destCity), destState,
 		loadType, llen, weight, s.equip, price, stops, phone}
 	s.loads = append(s.loads, load)

@@ -10,21 +10,21 @@ import "os/exec"
 import "path"
 import "time"
 
-var xvfbPath = flag.String("xvfb_path", "/usr/bin/Xvfb", 
+var xvfbPath = flag.String("xvfb_path", "/usr/bin/Xvfb",
 	"Path for Xvfb")
-var browserPath = flag.String("browser_path", "/usr/bin/google-chrome", 
+var browserPath = flag.String("browser_path", "/usr/bin/google-chrome",
 	"Path for a browser")
 var debugBrowser = flag.Bool("debug_browser", false, "")
 var debugSubprocs = flag.Bool("debug_subprocs", false, "")
 
 type Browser struct {
-	server        *http.Server
-	xvfb, browse  *exec.Cmd
+	server       *http.Server
+	xvfb, browse *exec.Cmd
 }
 
 type pipeData struct {
 	cmd, data string
-	err error
+	err       error
 }
 
 func colonPort(p int) string {
@@ -52,11 +52,11 @@ func readOut(cmd string, f io.ReadCloser, ch chan<- pipeData) {
 func printOut(ch <-chan pipeData) {
 	for {
 		select {
-		case pd := <- ch:
+		case pd := <-ch:
 			if pd.err != nil {
 				log.Print(pd.cmd, ":ERROR: ", pd.err)
 				break
-			} 
+			}
 			for _, x := range strings.Split(pd.data, "\n") {
 				if len(x) > 0 {
 					log.Print(pd.cmd, ": ", x)
@@ -89,7 +89,7 @@ func startProcess(cmd string, env []string, args ...string) (*exec.Cmd, error) {
 	return proc, nil
 }
 
-func NewBrowser(httpPort, xPortOffset int, 
+func NewBrowser(httpPort, xPortOffset int,
 	startUri string, handler http.Handler) (*Browser, error) {
 	b := &Browser{}
 	server := &http.Server{
@@ -110,7 +110,7 @@ func NewBrowser(httpPort, xPortOffset int,
 	}
 	b.xvfb = xvfb
 	if !*debugBrowser {
-		browse, err := startProcess(*browserPath, 
+		browse, err := startProcess(*browserPath,
 			[]string{"DISPLAY=" + display},
 			fmt.Sprint("http://localhost:", httpPort, startUri))
 		if err != nil {
