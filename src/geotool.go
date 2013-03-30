@@ -35,11 +35,11 @@ func (cf *CityFinder) getLocFromWiki(uri string) (geo.SphereCoords, []byte, erro
 			switch value {
 			case "latitude":
 				return func(text string) {
-					c.Lat = common.StringToDegrees(text)
+					c.Lat = geo.StringToDegrees(text)
 				}
 			case "longitude":
 				return func(text string) {
-					c.Long = common.StringToDegrees(text)
+					c.Long = geo.StringToDegrees(text)
 				}
 			}
 			return nil

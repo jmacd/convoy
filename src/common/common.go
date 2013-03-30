@@ -26,10 +26,10 @@ func init() {
 	// ScriptResource.axd file.  E.g.,
 	// stackoverflow.com/questions/5681122/asp-net-ipad-safari-cache-issue
 	// Seems to be a problem _only_ when a proxy is involved.
+	// { DisableCompression: true }
 
 	client = &http.Client{
-		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment
-		/* DisableCompression: true */},
+		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment},
 	}
 	secure = &http.Client{
 		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
