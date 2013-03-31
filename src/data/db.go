@@ -8,16 +8,6 @@ import _ "github.com/Go-SQL-Driver/MySQL"
 
 type TableName string
 
-const (
-	Corrections      TableName = "Corrections"
-	Locations        TableName = "Locations"
-	TruckLoads       TableName = "TruckLoads"
-	LoadCityStates   TableName = "LoadCityStates"
-	GeoCityStates    TableName = "GeoCityStates"
-	GoogleUnknown    TableName = "GoogleUnknown"
-	WikipediaUnknown TableName = "WikipediaUnknown"
-)
-
 var dbName = flag.String("db_name", "", "Name of the DB")
 
 // OpenDb opens and tests the database connection.
@@ -65,9 +55,16 @@ func InsertQuery(db *sql.DB, table TableName, columns ...string) (*sql.Stmt, err
 		insertPlaceHolders(columns) + ")")
 }
 
-func SelectQuery(db *sql.DB, table TableName, columns ...string) (*sql.Stmt, error) {
+func SelectWhereQuery(db *sql.DB, table TableName, columns ...string) (*sql.Stmt, error) {
 	return db.Prepare("SELECT * FROM " + Table(table) +
 		" WHERE " + wherePlaceHolders(columns))
+}
+
+func SelectGroupQuery(db *sql.DB, table TableName, columns ...string) (*sql.Stmt, error) {
+	cols := strings.Join(columns, ", ")
+	return db.Prepare("SELECT " + cols +
+		" FROM " + Table(table) +
+		" GROUP BY " + cols)
 }
 
 func HasRows(s *sql.Stmt, a ...interface{}) (bool, error) {

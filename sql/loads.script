@@ -100,11 +100,17 @@ CREATE VIEW GeoCityStates (C, S) AS
        SELECT InCity C, InState S FROM Convoy.Corrections
        UNION ALL SELECT LocCity C, LocState S FROM Convoy.Locations;
 
-CREATE VIEW UnknownCityStates AS 
-       SELECT C, S FROM 
-       	     (SELECT C, S FROM LoadCityStates GROUP BY C, S) AS Loads
-       WHERE (C, S) NOT IN 
-       	     (SELECT C, S FROM GeoCityStates AS Places GROUP BY C, S);
+CREATE VIEW LoadCityStatesGrouped (C, S) AS
+       SELECT C, S FROM LoadCityStates GROUP BY C, S;
+
+CREATE VIEW GeoCityStatesGrouped (C, S) AS
+	SELECT C, S FROM GeoCityStates AS Places GROUP BY C, S;
+
+-- TODO(jmacd) Apparently this is slow because MySQL decides
+-- to do sequential scan for very large "IN" expressions; fix.
+CREATE VIEW UnknownCityStates (C, S) AS 
+       SELECT C, S FROM LoadCityStatesGrouped
+       WHERE (C, S) NOT IN (SELECT C, S FROM GeoCityStatesGrouped);
 
 -- TODO(jmacd): A view of missing locations, i.e., ones with a correction
 -- (OutCity, OutState) that does not appear in Locations.

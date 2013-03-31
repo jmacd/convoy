@@ -8,6 +8,7 @@ GOFILES = \
 	common/location.go \
 	data/db.go \
 	data/fix.go \
+	data/model.go \
 	geo/kdtree.go \
 	geo/point.go \
 	geo/pointconv.go \

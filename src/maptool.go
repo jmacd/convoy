@@ -10,9 +10,8 @@ import "runtime"
 import "common"
 import "data"
 import "geo"
-import "maps"
-
 //import "graph"
+import "maps"
 
 var input = flag.String("input", "", "OSM PBF formatted file")
 
@@ -61,6 +60,13 @@ type node struct {
 type mapData2 struct {
 	nodes []node
 	edges []nodeId
+}
+
+type mapTool struct {
+	data.ConvoyData
+	loc2node map[string]nodeId
+	tree *geo.Tree
+	data *mapData2
 }
 
 func keepWay(way *maps.Way) bool {
@@ -128,8 +134,7 @@ func (md *mapData2) mapPass2(bd *maps.BlockData, md1 *mapData1) {
 		}
 		mn := &md.nodes[mc.id]
 		mn.id = mc.id
-		geo.LatLongDegreesToCoords(
-			geo.SphereCoords{mapnode.Lat, mapnode.Long}, mn.position[:])
+		geo.SphereCoords{mapnode.Lat, mapnode.Long}.ToCoords(mn.position[:])
 	}
 	for w := 0; w < len(bd.Ways); w++ {
 		way := &bd.Ways[w]
@@ -198,6 +203,13 @@ func main() {
 		log.Fatal("Could not open database", err)
 	}
 	defer db.Close()
+	var mt mapTool
+	cd, err := data.NewConvoyData(db)
+	if err != nil {
+		log.Fatal("Could not prepare database", err)
+	}
+	mt.ConvoyData = *cd
+	mt.loc2node = make(map[string]nodeId)
 
 	osm := maps.NewMap()
 
@@ -226,16 +238,18 @@ func main() {
 			panic("Did not fill-in all edges")
 		}
 	}
-
-	tree := geo.NewTree(md2)
-	tree.Build()
+	mt.data = md2
+	mt.tree = geo.NewTree(md2)
+	mt.tree.Build()
 	log.Println("Built geospatial tree")
 	common.PrintMem()
 
-	// TODO(jmacd), and then...
-	// if err := printCityDistances(db, tree); err != nil {
-	// 	log.Println("PrintCityDistances:", err)
-	// }
+	if err := mt.findCityNodes(); err != nil {
+		log.Println("findCityNodes:", err)
+	}		
+	if err := mt.findCityDistances(); err != nil {
+		log.Println("findCityDistances:", err)
+	}
 }
 
 func (n *node) Point() geo.Coords {
@@ -279,4 +293,117 @@ func (md *mapData2) Count() int {
 
 func (md *mapData2) Node(i int) geo.Vertex {
 	return &md.nodes[i+1]
+}
+
+type cityLoc struct {
+	cs common.CityState
+	loc geo.SphereCoords
+}
+
+func (mt *mapTool) locateCity(csl cityLoc) nodeId {
+	var coords [3]geo.EarthLoc
+	csl.loc.ToCoords(coords[:])
+	near := mt.tree.FindNearest(coords[:])
+	dist := geo.GreatCircleDistance(near.Point(), coords[:])
+	log.Printf("%v @ %v nearest %.2fkm", csl.cs, csl.loc, dist / 1000.0)	
+	return near.(*node).id
+}
+
+type cityNode struct {
+	cs common.CityState
+	id nodeId
+}
+
+func (mt *mapTool) findCityNodes() error {
+	cpus := runtime.NumCPU()
+	ch1 := make(chan cityLoc, cpus)
+	ch2 := make(chan cityNode, cpus)
+	ch3 := make(chan bool, cpus)
+	for i := 0; i < cpus; i++ {
+		go func() {
+			for csl := range ch1 {
+				ch2 <- cityNode{csl.cs, mt.locateCity(csl)}
+			}
+			ch3 <- true
+		}()
+	}
+	go func() {
+		for csn := range ch2 {
+			mt.loc2node[csn.cs.String()] = csn.id
+		}
+	}()
+	if err := mt.ForAllLocations(func (cs common.CityState, loc geo.SphereCoords) error {
+		ch1 <- cityLoc{cs, loc}
+		return nil
+	}); err != nil {
+		return err
+	}
+	close(ch1)
+	for i := 0; i < cpus; i++ {
+		<- ch3
+	}
+	close(ch2)
+	return nil
+}
+
+type cityPair struct {
+	from, to common.CityState
+	fromNode, toNode nodeId
+}
+
+type cityDist struct {
+	from, to common.CityState
+	meters int
+}
+
+func (mt *mapTool) shortestPath(csp cityPair) int {
+	// nodes := graph.ShortestPath(mt.data, csp.fromNode, csp.toNode)
+	// dist := 0
+	// for i := 0; i < len(nodes) - 1; i++ {
+	// 	dist += geo.GreatCircleDistance(nodes[i].Point(), nodes[i+1].Point())
+	// }
+	//return dist
+	return 0
+}
+
+func (mt *mapTool) findCityDistances() error {
+	cpus := runtime.NumCPU()
+	ch1 := make(chan cityPair, cpus)
+	ch2 := make(chan cityDist, cpus)
+	ch3 := make(chan bool, cpus)
+	for i := 0; i < cpus; i++ {
+		go func() {
+			for csp := range ch1 {
+				ch2 <- cityDist{csp.from, csp.to, mt.shortestPath(csp)}
+			}
+			ch3 <- true
+		}()
+	}
+	go func() {
+		for csd := range ch2 {
+			// TODO write to db
+			_ = csd
+		}
+	}()
+	if err := mt.ForAllLoadPairs(func (from, to common.CityState, 
+		fromLoc, toLoc geo.SphereCoords) error {
+
+		fromNodeId, has1 := mt.loc2node[from.String()]
+		toNodeId, has2 := mt.loc2node[to.String()]
+		
+		if !has1 || !has2 {
+			panic(fmt.Sprintln("Missing a location:", from, to))
+		}
+
+		ch1 <- cityPair{from, to, fromNodeId, toNodeId}
+		return nil
+	}); err != nil {
+		return err
+	}
+	close(ch1)
+	for i := 0; i < cpus; i++ {
+		<- ch3
+	}
+	close(ch2)
+	return nil
 }

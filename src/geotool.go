@@ -2,6 +2,7 @@ package main
 
 import "database/sql"
 import "flag"
+import "fmt"
 import "log"
 import "code.google.com/p/go.net/html/atom"
 
@@ -10,10 +11,11 @@ import "common"
 import "geo"
 import "scraper"
 
-var dry_run = flag.Bool("dry_run", false, "")
 var show_locations = flag.Bool("show_locations", false, "")
 var show_corrections = flag.Bool("show_corrections", false, "")
 var show_load_places = flag.Bool("show_load_places", false, "")
+var show_load_pairs = flag.Bool("show_load_pairs", false, "")
+var show_missing_cities = flag.Bool("show_missing_cities", false, "")
 var try_finding = flag.String("try_finding", "", "")
 var http_port = flag.Int("http_port", 8000, "")
 var xvfb_port_offset = flag.Int("xvfb_port_offset", 1, "")
@@ -123,7 +125,7 @@ func (cf *CityFinder) tryFindingCoords(
 		}
 	}
 	spelling.State = common.StateCode(spelling.State)
-	if missing.Equals(spelling) {
+	if !missing.Equals(spelling) {
 		hasCor, err := cf.HasCorrection(missing)
 		if err != nil {
 			return false, err
@@ -183,6 +185,7 @@ func (cf *CityFinder) tryMissingCity(missing common.CityState) error {
 		if found {
 			return nil
 		}
+		city.State = common.StateCode(city.State)
 		err = cf.AddGoogleUnknown(city)
 		if err != nil {
 			return err
@@ -195,10 +198,6 @@ func (cf *CityFinder) findMissingCities() error {
 	count := 0
 	ret := cf.ForAllMissingCities(func(cs common.CityState) error {
 		count++
-		if *dry_run {
-			log.Println("Missing", cs)
-			return nil
-		}
 		err := cf.tryMissingCity(cs)
 		if err != nil {
 			log.Printf("Error on %s: %s", cs, err)
@@ -232,11 +231,33 @@ func main() {
 
 	switch {
 	case *show_locations:
-		cf.ShowAllLocations()
+		cf.ForAllLocations(func (cs common.CityState, 
+			loc geo.SphereCoords) error {
+			fmt.Println(cs, "->", loc)
+			return nil
+		})
 	case *show_corrections:
-		cf.ShowAllCorrections()
+		cf.ForAllCorrections(func (from, to common.CityState) error {
+			fmt.Println(from, "->", to)
+			return nil
+		})
 	case *show_load_places:
-		cf.ShowAllLoads()
+		cf.ForAllLoadPlaces(func (cs common.CityState) error {
+			fmt.Println(cs)
+			return nil
+		})
+	case *show_missing_cities:
+		cf.ForAllMissingCities(func (cs common.CityState) error {
+			fmt.Println(cs)
+			return nil
+		})
+	case *show_load_pairs:
+		cf.ForAllLoadPairs(func (from, to common.CityState, 
+					fromLoc, toLoc geo.SphereCoords) error {
+			fmt.Printf("%v(%v) -> %v(%v)\n", 
+				from, fromLoc, to, toLoc)
+			return nil
+		})
 	case len(*try_finding) != 0:
 		cs := common.ParseCityState(*try_finding)
 		if err = cf.tryMissingCity(cs); err != nil {

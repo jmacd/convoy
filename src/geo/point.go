@@ -43,7 +43,7 @@ func degreeToRad(deg float64) float64 {
 }
 
 // Converts Lat/Long in degrees to scaled 3-d earth points.
-func LatLongDegreesToCoords(sc SphereCoords, c Coords) {
+func (sc SphereCoords) ToCoords(c Coords) {
 	latRad, longRad := degreeToRad(sc.Lat), degreeToRad(sc.Long)
 	x1 := math.Cos(latRad) * math.Cos(longRad)
 	y1 := math.Cos(latRad) * math.Sin(longRad)

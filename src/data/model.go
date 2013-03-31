@@ -1,104 +1,124 @@
 package data
 
 import "database/sql"
-import "fmt"
 import "log"
 
 import "common"
 import "geo"
 
 type ConvoyData struct {
-	missingStmt    *sql.Stmt
-	addCorStmt     *sql.Stmt
-	hasCorStmt     *sql.Stmt
-	addLocStmt     *sql.Stmt
-	hasLocStmt     *sql.Stmt
-	addGoogUnkStmt *sql.Stmt
-	hasGoogUnkStmt *sql.Stmt
-	addWikiUnkStmt *sql.Stmt
-	hasWikiUnkStmt *sql.Stmt
-	getAllLocsStmt *sql.Stmt
-	getAllCorrStmt *sql.Stmt
-	getAllLoadStmt *sql.Stmt
+	getAllMissingPlaces    *sql.Stmt
+	addCorrection          *sql.Stmt
+	hasCorrection          *sql.Stmt
+	addLocation            *sql.Stmt
+	hasLocation            *sql.Stmt
+	addGoogleUnknown       *sql.Stmt
+	hasGoogleUnkown        *sql.Stmt
+	addWikiUnknown         *sql.Stmt
+	hasWikiUnknown         *sql.Stmt
+	getAllLocationPlaces   *sql.Stmt
+	getAllCorrectionPlaces *sql.Stmt
+	getAllLoadPlaces       *sql.Stmt
+	getAllLoadPlacePairs   *sql.Stmt
+	getAllCorrections      *sql.Stmt
+	getAllLocations        *sql.Stmt
 }
+
+const (
+	Corrections       TableName = "Corrections"
+	Locations         TableName = "Locations"
+	TruckLoads        TableName = "TruckLoads"
+	LoadCityStates    TableName = "LoadCityStates"
+	GeoCityStates     TableName = "GeoCityStates"
+	GoogleUnknown     TableName = "GoogleUnknown"
+	WikipediaUnknown  TableName = "WikipediaUnknown"
+	UnknownCityStates TableName = "UnknownCityStates"
+)
 
 func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 	var err error
 	cd := &ConvoyData{}
-	// TODO(jmacd) Apparently this is slow because MySQL decides
-	// to do sequential scan for very large "IN" expressions; fix.
-	if cd.missingStmt, err = db.Prepare("SELECT C, S FROM (SELECT C, S FROM " + Table(LoadCityStates) + " GROUP BY C, S) AS Loads WHERE (C, S) NOT IN (SELECT C, S FROM " + Table(GeoCityStates) + " AS Places GROUP BY C, S)"); err != nil {
-		return nil, err
-	}
-	if cd.addCorStmt, err = InsertQuery(db, Corrections,
+	if cd.addCorrection, err = InsertQuery(db, Corrections,
 		"InCity", "InState", "OutCity", "OutState", "Determined"); err != nil {
 		return nil, err
 	}
-	if cd.addLocStmt, err = InsertQuery(db, Locations,
+	if cd.addLocation, err = InsertQuery(db, Locations,
 		"LocCity", "LocState", "Latitude", "Longitude", "Determined"); err != nil {
 		return nil, err
 	}
-	if cd.addGoogUnkStmt, err = InsertQuery(db, GoogleUnknown,
+	if cd.addGoogleUnknown, err = InsertQuery(db, GoogleUnknown,
 		"UnknownCity", "UnknownState"); err != nil {
 		return nil, err
 	}
-	if cd.addWikiUnkStmt, err = InsertQuery(db, WikipediaUnknown,
+	if cd.addWikiUnknown, err = InsertQuery(db, WikipediaUnknown,
 		"UnknownUri"); err != nil {
 		return nil, err
 	}
-	if cd.hasCorStmt, err = SelectQuery(db, Corrections,
+	if cd.hasCorrection, err = SelectWhereQuery(db, Corrections,
 		"InCity", "InState"); err != nil {
 		return nil, err
 	}
-	if cd.hasLocStmt, err = SelectQuery(db, Locations,
+	if cd.hasLocation, err = SelectWhereQuery(db, Locations,
 		"LocCity", "LocState"); err != nil {
 		return nil, err
 	}
-	if cd.hasGoogUnkStmt, err = SelectQuery(db, GoogleUnknown,
+	if cd.hasGoogleUnkown, err = SelectWhereQuery(db, GoogleUnknown,
 		"UnknownCity", "UnknownState"); err != nil {
 		return nil, err
 	}
-	if cd.hasWikiUnkStmt, err = SelectQuery(db, WikipediaUnknown,
+	if cd.hasWikiUnknown, err = SelectWhereQuery(db, WikipediaUnknown,
 		"UnknownUri"); err != nil {
 		return nil, err
 	}
-	if cd.getAllLocsStmt, err = SelectQuery(db, Locations,
+	if cd.getAllMissingPlaces, err = SelectGroupQuery(db, UnknownCityStates,
+		"C", "S"); err != nil {
+		return nil, err
+	}
+	if cd.getAllLocationPlaces, err = SelectGroupQuery(db, Locations,
 		"LocCity", "LocState"); err != nil {
 		return nil, err
 	}
-	if cd.getAllCorrStmt, err = db.Prepare(
-		"SELECT InCity, InState FROM " +
-			Table(Corrections) +
-			" GROUP BY InCity, InState"); err != nil {
+	if cd.getAllCorrectionPlaces, err = SelectGroupQuery(db, Corrections,
+		"InCity", "InState"); err != nil {
 		return nil, err
 	}
-	if cd.getAllLoadStmt, err = db.Prepare(
-		"SELECT C, S FROM " +
-			Table(LoadCityStates) +
-			" GROUP BY C, S"); err != nil {
+	if cd.getAllLoadPlaces, err = SelectGroupQuery(db, LoadCityStates,
+		"C", "S"); err != nil {
+		return nil, err
+	}
+	if cd.getAllLoadPlacePairs, err = SelectGroupQuery(db, TruckLoads,
+		"OriginCity", "OriginState", "DestCity", "DestState"); err != nil {
+		return nil, err
+	}
+	if cd.getAllCorrections, err = SelectGroupQuery(db, Corrections,
+		"InCity", "InState", "OutCity", "OutState"); err != nil {
+		return nil, err
+	}
+	if cd.getAllLocations, err = SelectGroupQuery(db, Locations,
+		"LocCity", "LocState", "Latitude", "Longitude"); err != nil {
 		return nil, err
 	}
 	return cd, nil
 }
 
 func (cd *ConvoyData) HasLocation(cs common.CityState) (bool, error) {
-	return HasRows(cd.hasLocStmt, cs.City, common.StateCode(cs.State))
+	return HasRows(cd.hasLocation, cs.City, common.StateCode(cs.State))
 }
 
 func (cd *ConvoyData) HasCorrection(cs common.CityState) (bool, error) {
-	return HasRows(cd.hasCorStmt, cs.City, common.StateCode(cs.State))
+	return HasRows(cd.hasCorrection, cs.City, common.StateCode(cs.State))
 }
 
 func (cd *ConvoyData) HasGoogleUnknown(cs common.CityState) (bool, error) {
-	return HasRows(cd.hasGoogUnkStmt, cs.City, common.StateCode(cs.State))
+	return HasRows(cd.hasGoogleUnkown, cs.City, common.StateCode(cs.State))
 }
 
 func (cd *ConvoyData) HasWikipediaUnknown(uri string) (bool, error) {
-	return HasRows(cd.hasWikiUnkStmt, uri)
+	return HasRows(cd.hasWikiUnknown, uri)
 }
 
 func (cd *ConvoyData) AddWikipediaUnknown(uri string) error {
-	_, err := cd.addWikiUnkStmt.Exec(uri)
+	_, err := cd.addWikiUnknown.Exec(uri)
 	return err
 }
 
@@ -106,7 +126,7 @@ func (cd *ConvoyData) AddGoogleUnknown(cs common.CityState) error {
 	if cs.State != common.StateCode(cs.State) {
 		panic("StateCode() not applied")
 	}
-	_, err := cd.addGoogUnkStmt.Exec(cs.City, cs.State)
+	_, err := cd.addGoogleUnknown.Exec(cs.City, cs.State)
 	return err
 }
 
@@ -117,7 +137,7 @@ func (cd *ConvoyData) AddCorrection(from common.CityState,
 		to.State != common.StateCode(to.State) {
 		panic("StateCode() not applied")
 	}
-	_, err := cd.addCorStmt.Exec(from.City, from.State, to.City, to.State, det)
+	_, err := cd.addCorrection.Exec(from.City, from.State, to.City, to.State, det)
 	return err
 }
 
@@ -126,30 +146,92 @@ func (cd *ConvoyData) AddLocation(cs common.CityState,
 	if cs.State != common.StateCode(cs.State) {
 		panic("StateCode() not applied")
 	}
-	_, err := cd.addLocStmt.Exec(cs.City, cs.State, loc.Lat, loc.Long, uri)
+	_, err := cd.addLocation.Exec(cs.City, cs.State, loc.Lat, loc.Long, uri)
 	if err != nil {
 		return err
 	}
 	return err
 }
 
+func (cd *ConvoyData) ForAllLoadPlaces(csfunc func(common.CityState) error) error {
+	return forAllCities(cd.getAllLoadPlaces, csfunc)
+}
+
 func (cd *ConvoyData) ForAllMissingCities(csfunc func(common.CityState) error) error {
-	return ForAllCities(cd.missingStmt, csfunc)
+	return forAllCities(cd.getAllMissingPlaces, csfunc)
 }
 
-func (cd *ConvoyData) ShowAllLocations() {
-	ShowAll(cd.getAllLocsStmt)
+func (cd *ConvoyData) ForAllLocations(lfunc func (common.CityState, geo.SphereCoords) error) error {
+	var locCity, locState []byte
+	var lat, long float64
+	return ForAll(cd.getAllLocations, func () error {
+		return lfunc(
+			common.CityState{string(locCity), string(locState)},
+			geo.SphereCoords{lat, long})
+	}, &locCity, &locState, &lat, &long)
 }
 
-func (cd *ConvoyData) ShowAllCorrections() {
-	ShowAll(cd.getAllCorrStmt)
+func (cd *ConvoyData) ForAllCorrections(
+	cfunc func (from, to common.CityState) error) error {
+	var fromCity, fromState, toCity, toState []byte
+	return ForAll(cd.getAllCorrections, func () error {
+		return cfunc(common.CityState{
+			string(fromCity), string(fromState)},
+			common.CityState{string(toCity),
+			string(toState)})
+	}, &fromCity, &fromState, &toCity, &toState)
 }
 
-func (cd *ConvoyData) ShowAllLoads() {
-	ShowAll(cd.getAllLoadStmt)
+func (cd *ConvoyData) ForAllLoadPairs(
+	lfunc func(from, to common.CityState, 
+		fromLoc, toLoc geo.SphereCoords) error) error {
+	corrections := make(map[string]common.CityState)
+	locations := make(map[string]geo.SphereCoords)
+	if err := cd.ForAllCorrections(func (in, out common.CityState) error {
+		corrections[in.String()] = out
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := cd.ForAllLocations(
+		func (loc common.CityState, spc geo.SphereCoords) error {
+		locations[loc.String()] = spc
+		return nil
+	}); err != nil {
+		return err
+	}
+	unresolved := 0
+	output := make(map[string]bool)
+	var fromCity, fromState, toCity, toState []byte
+	if err := ForAll(cd.getAllLoadPlacePairs, func () error {
+		from := common.CityState{string(fromCity), string(fromState)}
+		to := common.CityState{string(toCity), string(toState)}
+		if cs, has := corrections[from.String()]; has {
+			from = cs
+		}
+		if cs, has := corrections[to.String()]; has {
+			to = cs
+		}
+		fl, hasFl := locations[from.String()]
+		tl, hasTl := locations[to.String()]
+		if !hasFl || !hasTl {
+			unresolved++
+			return nil
+		}
+		comb := from.String() + "/" + to.String()
+		if _, has := output[comb]; has {
+			return nil
+		}
+		output[comb] = true
+		return lfunc(from, to, fl, tl)
+	}, &fromCity, &fromState, &toCity, &toState); err != nil {
+		return err
+	}
+	log.Println("Skipped", unresolved, "city pairs")
+	return nil
 }
 
-func ForAllCities(
+func forAllCities(
 	stmt *sql.Stmt, csfunc func(common.CityState) error) error {
 	var city, state []byte
 	return ForAll(stmt, func() error {
@@ -157,39 +239,3 @@ func ForAllCities(
 			string(state)})
 	}, &city, &state)
 }
-
-func ShowAll(stmt *sql.Stmt) {
-	err := ForAllCities(stmt, func(cs common.CityState) error {
-		fmt.Println(cs)
-		return nil
-	})
-	if err != nil {
-		log.Println("Error in ShowAll", err)
-	}
-}
-
-// TODO(jmacd) Move this...
-// func printCityDistances(db *sql.DB, tree *geo.Tree) error {
-// 	stmt, err := db.Prepare(
-// 		"SELECT LocCity, LocState, Latitude, Longitude FROM " +
-// 		Table(Locations))
-// 	if err != nil {
-// 		return err
-// 	}
-// 	count := 0
-// 	var city, state []byte
-// 	var lat, long float64
-// 	if err := ForAll(stmt, func () {
-// 		count++
-// 		var coords [3]geo.EarthLoc
-// 		geo.LatLongDegreesToCoords(lat, long, coords[:])
-// 		near := tree.FindNearest(coords[:])
-// 		dist := geo.GreatCircleDistance(near.Point(), coords[:])
-// 		log.Printf("%v, %v @ %.2f,%.2f nearest %.2fkm",
-// 			string(city), string(state), lat, long, dist / 1000.0)
-// 	}, &city, &state, &lat, &long); err != nil {
-// 		return err
-// 	}
-// 	log.Println("Scanned", count, "cities")
-// 	return nil
-// }

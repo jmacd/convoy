@@ -149,6 +149,7 @@ var expansions = map[string][]string{
 	"Is":    []string{"Isle", "Island"},
 	"Intl":  []string{"International"},
 	"Jct":   []string{"Junction"},
+	"Junct": []string{"Junction"},
 	"Lk":    []string{"Lake"},
 	"Mt":    []string{"Mount", "Mountain"},
 	"Mtn":   []string{"Mountain"},
