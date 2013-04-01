@@ -10,7 +10,7 @@ import "runtime"
 import "common"
 import "data"
 import "geo"
-//import "graph"
+import "graph"
 import "maps"
 
 var input = flag.String("input", "", "OSM PBF formatted file")
@@ -33,12 +33,11 @@ var highwayTypes = map[string]bool{
 	"road":           false,
 }
 
-type nodeId uint32
 type mapId int64
 
 type mapCount struct {
-	id nodeId
-	ec uint32
+	id graph.NodeId
+	ec uint32  // edge count
 }
 
 type mapData1 struct {
@@ -46,25 +45,30 @@ type mapData1 struct {
 	// scan and renumberings into a (32-bit dense ID number,
 	// 32-bit count of outgoing edges)
 	mapIds     map[mapId]mapCount
-	nextNodeId nodeId
+	nextNodeId graph.NodeId
 	totalEdges uint32
 }
 
 type node struct {
-	id                  nodeId
+	id                  graph.NodeId
 	position            [3]geo.EarthLoc
-	treeLeft, treeRight nodeId
-	neighbors           []nodeId
+	treeLeft, treeRight graph.NodeId
+	neighbors           []graph.NodeId
 }
 
 type mapData2 struct {
 	nodes []node
-	edges []nodeId
+	edges []graph.NodeId
+}
+
+type nodeDist struct {
+	id graph.NodeId
+	dist float64
 }
 
 type mapTool struct {
 	data.ConvoyData
-	loc2node map[string]nodeId
+	loc2node map[string]nodeDist
 	tree *geo.Tree
 	data *mapData2
 }
@@ -111,16 +115,18 @@ func (md *mapData1) mapPass1(bd *maps.BlockData) {
 	}
 }
 
-func (md *mapData2) addEdge(n0 *node, v1 nodeId) {
+func (md *mapData2) addEdge(n0 *node, v1 graph.NodeId) {
 	for i, neighbor := range n0.neighbors {
-		if neighbor != 0 {
+		if neighbor != graph.ZeroNodeId {
 			continue
 		}
 		n0.neighbors[i] = v1
+		return
 	}
+	panic("Invalid edge count")
 }
 
-func (md *mapData2) addEdges(v0, v1 nodeId) {
+func (md *mapData2) addEdges(v0, v1 graph.NodeId) {
 	md.addEdge(&md.nodes[v0], v1)
 	md.addEdge(&md.nodes[v1], v0)
 }
@@ -167,7 +173,7 @@ func readInput() io.Reader {
 func newMapData1() *mapData1 {
 	return &mapData1{
 		mapIds:     make(map[mapId]mapCount),
-		nextNodeId: nodeId(1),
+		nextNodeId: graph.FirstNodeId,
 		totalEdges: 0,
 	}
 }
@@ -175,7 +181,7 @@ func newMapData1() *mapData1 {
 func newMapData2(md1 *mapData1) *mapData2 {
 	md2 := &mapData2{
 		make([]node, md1.nextNodeId),
-		make([]nodeId, md1.totalEdges*2),
+		make([]graph.NodeId, md1.totalEdges*2),
 	}
 	ei := 0
 	c := 0
@@ -209,7 +215,7 @@ func main() {
 		log.Fatal("Could not prepare database", err)
 	}
 	mt.ConvoyData = *cd
-	mt.loc2node = make(map[string]nodeId)
+	mt.loc2node = make(map[string]nodeDist)
 
 	osm := maps.NewMap()
 
@@ -234,7 +240,7 @@ func main() {
 
 	// Sanity check: should have filled-in all edges
 	for _, e := range md2.edges {
-		if e == nodeId(0) {
+		if e == graph.ZeroNodeId {
 			panic("Did not fill-in all edges")
 		}
 	}
@@ -295,23 +301,32 @@ func (md *mapData2) Node(i int) geo.Vertex {
 	return &md.nodes[i+1]
 }
 
+func (md *mapData2) Neighbors(n graph.NodeId) []graph.NodeId {
+	return md.nodes[n].neighbors
+}
+
+func (md *mapData2) Distance(from, to graph.NodeId) float32 {
+	dist := geo.GreatCircleDistance(md.nodes[from].position[:], md.nodes[to].position[:])
+	return float32(dist)
+}
+
 type cityLoc struct {
 	cs common.CityState
 	loc geo.SphereCoords
 }
 
-func (mt *mapTool) locateCity(csl cityLoc) nodeId {
+func (mt *mapTool) locateCity(csl cityLoc) nodeDist {
 	var coords [3]geo.EarthLoc
 	csl.loc.ToCoords(coords[:])
 	near := mt.tree.FindNearest(coords[:])
 	dist := geo.GreatCircleDistance(near.Point(), coords[:])
 	log.Printf("%v @ %v nearest %.2fkm", csl.cs, csl.loc, dist / 1000.0)	
-	return near.(*node).id
+	return nodeDist{near.(*node).id, dist}
 }
 
 type cityNode struct {
 	cs common.CityState
-	id nodeId
+	nd nodeDist
 }
 
 func (mt *mapTool) findCityNodes() error {
@@ -322,6 +337,9 @@ func (mt *mapTool) findCityNodes() error {
 	for i := 0; i < cpus; i++ {
 		go func() {
 			for csl := range ch1 {
+				if csl.cs.State != "CA" {
+					continue
+				}
 				ch2 <- cityNode{csl.cs, mt.locateCity(csl)}
 			}
 			ch3 <- true
@@ -329,7 +347,7 @@ func (mt *mapTool) findCityNodes() error {
 	}
 	go func() {
 		for csn := range ch2 {
-			mt.loc2node[csn.cs.String()] = csn.id
+			mt.loc2node[csn.cs.String()] = csn.nd
 		}
 	}()
 	if err := mt.ForAllLocations(func (cs common.CityState, loc geo.SphereCoords) error {
@@ -348,7 +366,7 @@ func (mt *mapTool) findCityNodes() error {
 
 type cityPair struct {
 	from, to common.CityState
-	fromNode, toNode nodeId
+	fromNodeD, toNodeD nodeDist
 }
 
 type cityDist struct {
@@ -357,13 +375,19 @@ type cityDist struct {
 }
 
 func (mt *mapTool) shortestPath(csp cityPair) int {
-	// nodes := graph.ShortestPath(mt.data, csp.fromNode, csp.toNode)
-	// dist := 0
-	// for i := 0; i < len(nodes) - 1; i++ {
-	// 	dist += geo.GreatCircleDistance(nodes[i].Point(), nodes[i+1].Point())
-	// }
-	//return dist
-	return 0
+	nodes := graph.ShortestPath(mt.data, csp.fromNodeD.id, csp.toNodeD.id)
+	var dist float32
+	for i := 0; i < len(nodes) - 1; i++ {
+		dist += mt.data.Distance(nodes[i], nodes[i+1])
+	}
+	dist += float32(csp.fromNodeD.dist)
+	dist += float32(csp.toNodeD.dist)
+	fromP := mt.data.nodes[csp.fromNodeD.id].Point()
+	toP := mt.data.nodes[csp.toNodeD.id].Point()
+	log.Printf("Road distance %v -> %v = %.1fkm (%.1f%%) %d segments",
+		csp.from, csp.to, dist / 1000.0, 100.0 * (float64(dist) / geo.GreatCircleDistance(fromP, toP)),
+		len(nodes))
+	return int(dist)
 }
 
 func (mt *mapTool) findCityDistances() error {
@@ -374,6 +398,9 @@ func (mt *mapTool) findCityDistances() error {
 	for i := 0; i < cpus; i++ {
 		go func() {
 			for csp := range ch1 {
+				if csp.from.State != "CA" || csp.to.State != "CA" {
+					continue
+				}
 				ch2 <- cityDist{csp.from, csp.to, mt.shortestPath(csp)}
 			}
 			ch3 <- true
@@ -388,14 +415,16 @@ func (mt *mapTool) findCityDistances() error {
 	if err := mt.ForAllLoadPairs(func (from, to common.CityState, 
 		fromLoc, toLoc geo.SphereCoords) error {
 
-		fromNodeId, has1 := mt.loc2node[from.String()]
-		toNodeId, has2 := mt.loc2node[to.String()]
+		fromNodeD, has1 := mt.loc2node[from.String()]
+		toNodeD, has2 := mt.loc2node[to.String()]
 		
 		if !has1 || !has2 {
-			panic(fmt.Sprintln("Missing a location:", from, to))
+			// TODO
+			// log.Println("Missing a location:", from, to)
+			return nil
 		}
 
-		ch1 <- cityPair{from, to, fromNodeId, toNodeId}
+		ch1 <- cityPair{from, to, fromNodeD, toNodeD}
 		return nil
 	}); err != nil {
 		return err

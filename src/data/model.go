@@ -218,6 +218,11 @@ func (cd *ConvoyData) ForAllLoadPairs(
 			unresolved++
 			return nil
 		}
+		if to.String() < from.String() {
+			from, to = to, from
+			fl, tl = tl, fl
+		}
+
 		comb := from.String() + "/" + to.String()
 		if _, has := output[comb]; has {
 			return nil

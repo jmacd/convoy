@@ -1,6 +1,7 @@
 package common
 
 import "crypto/tls"
+import "flag"
 import "fmt"
 import "io/ioutil"
 import "log"
@@ -9,6 +10,8 @@ import "os"
 import "runtime"
 import "runtime/pprof"
 import "time"
+
+var mem_profile = flag.Bool("mem_profile", false, "Write memory profiles")
 
 const (
 	UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) " +
@@ -78,12 +81,15 @@ func PrintMem() {
 	runtime.GC()
 	runtime.ReadMemStats(&ms)
 
-	pname := fmt.Sprint("prof", profileCount)
-	of, err := os.Create(pname)
-	profileCount++
-	defer of.Close()
-	if err == nil {
-		pprof.Lookup("heap").WriteTo(of, 1)
+	pname := "<none>"
+	if *mem_profile {
+		pname = fmt.Sprint("prof", profileCount)
+		of, err := os.Create(pname)
+		profileCount++
+		defer of.Close()
+		if err == nil {
+			pprof.Lookup("heap").WriteTo(of, 1)
+		}
 	}
 
 	log.Println("Memory allocated:", ms.Alloc,

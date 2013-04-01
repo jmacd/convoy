@@ -13,12 +13,12 @@ const (
 	googleBaseUri = "/customsearch/v1"
 
 	// jmacd.llc
-	//googleCx  = "018438991833677974599:jcnnzea70bm"
-	//googleKey = "AIzaSyDuCc1O8CPy7FmT6_Q6XfqYtdNcCqTEHDg"
+	googleCx  = "018438991833677974599:jcnnzea70bm"
+	googleKey = "AIzaSyDuCc1O8CPy7FmT6_Q6XfqYtdNcCqTEHDg"
 
 	// josh.macdonald
-	googleCx = "009758624066673491715:ot7tq3iqsbq"
-	googleKey = "AIzaSyAoocCn9R3G1PH9DoOFwASBa4ONZHWIWrk"
+	//googleCx = "009758624066673491715:ot7tq3iqsbq"
+	//googleKey = "AIzaSyAoocCn9R3G1PH9DoOFwASBa4ONZHWIWrk"
 
 )
 
