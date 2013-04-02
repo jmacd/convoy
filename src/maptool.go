@@ -331,15 +331,12 @@ type cityNode struct {
 
 func (mt *mapTool) findCityNodes() error {
 	cpus := runtime.NumCPU()
-	ch1 := make(chan cityLoc, cpus)
+	ch1 := make(chan cityLoc, 100000)  // TODO(jmacd): should be "cpus"
 	ch2 := make(chan cityNode, cpus)
 	ch3 := make(chan bool, cpus)
 	for i := 0; i < cpus; i++ {
 		go func() {
 			for csl := range ch1 {
-				if csl.cs.State != "CA" {
-					continue
-				}
 				ch2 <- cityNode{csl.cs, mt.locateCity(csl)}
 			}
 			ch3 <- true
@@ -349,6 +346,7 @@ func (mt *mapTool) findCityNodes() error {
 		for csn := range ch2 {
 			mt.loc2node[csn.cs.String()] = csn.nd
 		}
+		ch3 <- true
 	}()
 	if err := mt.ForAllLocations(func (cs common.CityState, loc geo.SphereCoords) error {
 		ch1 <- cityLoc{cs, loc}
@@ -361,6 +359,7 @@ func (mt *mapTool) findCityNodes() error {
 		<- ch3
 	}
 	close(ch2)
+	<- ch3
 	return nil
 }
 
@@ -384,23 +383,21 @@ func (mt *mapTool) shortestPath(csp cityPair) int {
 	dist += float32(csp.toNodeD.dist)
 	fromP := mt.data.nodes[csp.fromNodeD.id].Point()
 	toP := mt.data.nodes[csp.toNodeD.id].Point()
-	log.Printf("Road distance %v -> %v = %.1fkm (%.1f%%) %d segments",
-		csp.from, csp.to, dist / 1000.0, 100.0 * (float64(dist) / geo.GreatCircleDistance(fromP, toP)),
+	log.Printf("%v -> %v = %.1fkm (%.1f%%) %d segments",
+		csp.from, csp.to, dist / 1000.0, 
+		100.0 * (float64(dist) / geo.GreatCircleDistance(fromP, toP)),
 		len(nodes))
 	return int(dist)
 }
 
 func (mt *mapTool) findCityDistances() error {
 	cpus := runtime.NumCPU()
-	ch1 := make(chan cityPair, cpus)
+	ch1 := make(chan cityPair, 100000)  // TODO(jmacd) Should be "cpus"
 	ch2 := make(chan cityDist, cpus)
 	ch3 := make(chan bool, cpus)
 	for i := 0; i < cpus; i++ {
 		go func() {
 			for csp := range ch1 {
-				if csp.from.State != "CA" || csp.to.State != "CA" {
-					continue
-				}
 				ch2 <- cityDist{csp.from, csp.to, mt.shortestPath(csp)}
 			}
 			ch3 <- true
@@ -408,9 +405,12 @@ func (mt *mapTool) findCityDistances() error {
 	}
 	go func() {
 		for csd := range ch2 {
-			// TODO write to db
-			_ = csd
+			if err := mt.AddRoadDistance(csd.from, csd.to, csd.meters / 1000); err != nil {
+				log.Println("AddRoadDistance", csd.from, csd.to,
+					"failed:", err)
+			}
 		}
+		ch3 <- true
 	}()
 	if err := mt.ForAllLoadPairs(func (from, to common.CityState, 
 		fromLoc, toLoc geo.SphereCoords) error {
@@ -419,8 +419,7 @@ func (mt *mapTool) findCityDistances() error {
 		toNodeD, has2 := mt.loc2node[to.String()]
 		
 		if !has1 || !has2 {
-			// TODO
-			// log.Println("Missing a location:", from, to)
+			log.Println("Missing a location:", from, to)
 			return nil
 		}
 
@@ -434,5 +433,6 @@ func (mt *mapTool) findCityDistances() error {
 		<- ch3
 	}
 	close(ch2)
+	<- ch3
 	return nil
 }

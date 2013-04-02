@@ -93,12 +93,12 @@ CREATE TABLE IF NOT EXISTS RoadDistance (
        COLLATE = utf8_bin;
 
 CREATE VIEW LoadCityStates (C, S) AS 
-       SELECT OriginCity C, OriginState S FROM Convoy.TruckLoads
-       UNION ALL SELECT DestCity C, DestState S FROM Convoy.TruckLoads;
+       SELECT OriginCity C, OriginState S FROM TruckLoads
+       UNION ALL SELECT DestCity C, DestState S FROM TruckLoads;
 
 CREATE VIEW GeoCityStates (C, S) AS 
-       SELECT InCity C, InState S FROM Convoy.Corrections
-       UNION ALL SELECT LocCity C, LocState S FROM Convoy.Locations;
+       SELECT InCity C, InState S FROM Corrections
+       UNION ALL SELECT LocCity C, LocState S FROM Locations;
 
 CREATE VIEW LoadCityStatesGrouped (C, S) AS
        SELECT C, S FROM LoadCityStates GROUP BY C, S;

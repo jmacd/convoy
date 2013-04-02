@@ -16,6 +16,8 @@ type ConvoyData struct {
 	hasGoogleUnkown        *sql.Stmt
 	addWikiUnknown         *sql.Stmt
 	hasWikiUnknown         *sql.Stmt
+	addRoadDistance        *sql.Stmt
+	hasRoadDistance        *sql.Stmt
 	getAllLocationPlaces   *sql.Stmt
 	getAllCorrectionPlaces *sql.Stmt
 	getAllLoadPlaces       *sql.Stmt
@@ -33,6 +35,7 @@ const (
 	GoogleUnknown     TableName = "GoogleUnknown"
 	WikipediaUnknown  TableName = "WikipediaUnknown"
 	UnknownCityStates TableName = "UnknownCityStates"
+	RoadDistance      TableName = "RoadDistance"
 )
 
 func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
@@ -54,6 +57,11 @@ func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 		"UnknownUri"); err != nil {
 		return nil, err
 	}
+	if cd.addRoadDistance, err = InsertQuery(db, RoadDistance,
+		"SourceCity", "SourceState", 
+		"DestCity", "DestState", "Kilometers"); err != nil {
+		return nil, err
+	}
 	if cd.hasCorrection, err = SelectWhereQuery(db, Corrections,
 		"InCity", "InState"); err != nil {
 		return nil, err
@@ -68,6 +76,11 @@ func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 	}
 	if cd.hasWikiUnknown, err = SelectWhereQuery(db, WikipediaUnknown,
 		"UnknownUri"); err != nil {
+		return nil, err
+	}
+	if cd.hasRoadDistance, err = SelectWhereQuery(db, RoadDistance,
+		"SourceCity", "SourceState", 
+		"DestCity", "DestState"); err != nil {
 		return nil, err
 	}
 	if cd.getAllMissingPlaces, err = SelectGroupQuery(db, UnknownCityStates,
@@ -87,7 +100,8 @@ func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 		return nil, err
 	}
 	if cd.getAllLoadPlacePairs, err = SelectGroupQuery(db, TruckLoads,
-		"OriginCity", "OriginState", "DestCity", "DestState"); err != nil {
+		"OriginCity", "OriginState",
+		"DestCity", "DestState"); err != nil {
 		return nil, err
 	}
 	if cd.getAllCorrections, err = SelectGroupQuery(db, Corrections,
@@ -115,6 +129,10 @@ func (cd *ConvoyData) HasGoogleUnknown(cs common.CityState) (bool, error) {
 
 func (cd *ConvoyData) HasWikipediaUnknown(uri string) (bool, error) {
 	return HasRows(cd.hasWikiUnknown, uri)
+}
+
+func (cd *ConvoyData) HasRoadDistance(src, dest common.CityState) (bool, error) {
+	return HasRows(cd.hasRoadDistance, src.City, src.State, dest.City, dest.State)
 }
 
 func (cd *ConvoyData) AddWikipediaUnknown(uri string) error {
@@ -150,6 +168,17 @@ func (cd *ConvoyData) AddLocation(cs common.CityState,
 	if err != nil {
 		return err
 	}
+	return err
+}
+
+func (cd *ConvoyData) AddRoadDistance(src common.CityState,
+	dest common.CityState, kilometers int) error {
+
+	if src.State != common.StateCode(src.State) ||
+		dest.State != common.StateCode(dest.State) {
+		panic("StateCode() not applied")
+	}
+	_, err := cd.addRoadDistance.Exec(src.City, src.State, dest.City, dest.State, kilometers)
 	return err
 }
 
@@ -228,6 +257,13 @@ func (cd *ConvoyData) ForAllLoadPairs(
 			return nil
 		}
 		output[comb] = true
+		has, err := cd.HasRoadDistance(from, to)
+		if err != nil {
+			return err
+		}
+		if has {
+			return nil
+		}
 		return lfunc(from, to, fl, tl)
 	}, &fromCity, &fromState, &toCity, &toState); err != nil {
 		return err
