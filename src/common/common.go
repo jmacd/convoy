@@ -16,6 +16,8 @@ var mem_profile = flag.Bool("mem_profile", false, "Write memory profiles")
 const (
 	UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) " +
 		"AppleWebKit/537.18 (KHTML, like Gecko) Chrome/24.0.1312.58 Safari/537.18"
+
+	SqlDateFmt = "2006-01-02"
 )
 
 var (

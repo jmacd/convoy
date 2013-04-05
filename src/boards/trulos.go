@@ -268,8 +268,9 @@ func (s *trulosScrape) ProcessRowData(row []string) {
 		weight *= 1000 // Assume per thousand pounds
 	}
 	phone := trimmed[15]
-	load := &Load{date, common.ProperName(origin), s.state.name,
-		common.ProperName(destCity), destState,
+	load := &Load{/* ScrapeId not known yet */ 0, 
+		date, common.CityState{common.ProperName(origin), s.state.name},
+		common.CityState{common.ProperName(destCity), destState},
 		loadType, llen, weight, s.equip, price, stops, phone}
 	s.loads = append(s.loads, load)
 }

@@ -1,5 +1,7 @@
 package scraper
 
+import "time"
+
 // Page describes a page loading & scraping operation.
 type Page interface {
 	// A list of javascript actions to take after the initial load.
@@ -16,8 +18,14 @@ type Page interface {
 // for the initial page load, subsequently contains the value of
 // any Actions() returned by the Page.
 type Result struct {
-	//P      Page
 	Action string
 	Data   []byte
 	Err    error
+}
+
+// A single scrape.
+type Scrape struct {
+	ScrapeId   int64
+	StartTime  time.Time
+	FinishTime time.Time
 }

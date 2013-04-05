@@ -67,6 +67,11 @@ func SelectGroupQuery(db *sql.DB, table TableName, columns ...string) (*sql.Stmt
 		" GROUP BY " + cols)
 }
 
+func SelectAllQuery(db *sql.DB, table TableName, columns ...string) (*sql.Stmt, error) {
+	cols := strings.Join(columns, ", ")
+	return db.Prepare("SELECT " + cols + " FROM " + Table(table))
+}
+
 func HasRows(s *sql.Stmt, a ...interface{}) (bool, error) {
 	has, err := s.Query(a...)
 	if err != nil {

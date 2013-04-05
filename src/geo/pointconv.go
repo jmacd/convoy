@@ -40,5 +40,12 @@ func fmtDegree(d float64, pn string) string {
 }
 
 func (sc SphereCoords) String() string {
+	if !sc.Defined() {
+		return "unknown"
+	}
 	return fmtDegree(sc.Lat, "NS") + "," + fmtDegree(sc.Long, "EW")
+}
+
+func (csl CityStateLoc) String() string {
+	return fmt.Sprintf("%v(%v)", csl.CityState, csl.SphereCoords)
 }

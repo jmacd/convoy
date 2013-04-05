@@ -23,13 +23,15 @@ GOFILES = \
 CFILES = convoy.go $(GOFILES)
 MFILES = maptool.go $(GOFILES)
 GFILES = geotool.go $(GOFILES)
+LFILES = loadtool.go $(GOFILES)
 
 BINDIR = ../bin
 
 TARGETS = \
 	$(BINDIR)/convoy \
 	$(BINDIR)/maptool \
-	$(BINDIR)/geotool
+	$(BINDIR)/geotool \
+	$(BINDIR)/loadtool
 
 %.pb.go: %.proto
 	protoc --go_out=. $<
@@ -44,6 +46,9 @@ $(BINDIR)/maptool: $(MFILES)
 
 $(BINDIR)/geotool: $(GFILES)
 	go build -o $(BINDIR)/geotool geotool.go
+
+$(BINDIR)/loadtool: $(LFILES)
+	go build -o $(BINDIR)/loadtool loadtool.go
 
 test: test_common test_geo test_graph
 

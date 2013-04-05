@@ -1,10 +1,12 @@
 package data
 
 import "database/sql"
-import "log"
+import "time"
 
+import "boards"
 import "common"
 import "geo"
+import "scraper"
 
 type ConvoyData struct {
 	getAllMissingPlaces    *sql.Stmt
@@ -24,6 +26,8 @@ type ConvoyData struct {
 	getAllLoadPlacePairs   *sql.Stmt
 	getAllCorrections      *sql.Stmt
 	getAllLocations        *sql.Stmt
+	getAllLoads            *sql.Stmt
+	getAllScrapes          *sql.Stmt
 }
 
 const (
@@ -36,7 +40,15 @@ const (
 	WikipediaUnknown  TableName = "WikipediaUnknown"
 	UnknownCityStates TableName = "UnknownCityStates"
 	RoadDistance      TableName = "RoadDistance"
+	Scrapes           TableName = "Scrapes"
 )
+
+type CityFunc func(common.CityState) error
+type CityLocFunc func(geo.CityStateLoc) error
+type CityPairFunc func(from, to common.CityState) error
+type CityPairLocFunc func(from, to geo.CityStateLoc) error
+type LoadFunc func(load boards.Load) error
+type ScrapeFunc func(scrape scraper.Scrape) error
 
 func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 	var err error
@@ -58,7 +70,7 @@ func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 		return nil, err
 	}
 	if cd.addRoadDistance, err = InsertQuery(db, RoadDistance,
-		"SourceCity", "SourceState", 
+		"SourceCity", "SourceState",
 		"DestCity", "DestState", "Kilometers"); err != nil {
 		return nil, err
 	}
@@ -79,7 +91,7 @@ func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 		return nil, err
 	}
 	if cd.hasRoadDistance, err = SelectWhereQuery(db, RoadDistance,
-		"SourceCity", "SourceState", 
+		"SourceCity", "SourceState",
 		"DestCity", "DestState"); err != nil {
 		return nil, err
 	}
@@ -110,6 +122,16 @@ func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 	}
 	if cd.getAllLocations, err = SelectGroupQuery(db, Locations,
 		"LocCity", "LocState", "Latitude", "Longitude"); err != nil {
+		return nil, err
+	}
+	if cd.getAllLoads, err = SelectAllQuery(db, TruckLoads,
+		"ScrapeId", "PickupDate", "OriginState", "OriginCity",
+		"DestState", "DestCity", "LoadType", "Length", "Weight",
+		"Equipment", "Price", "Stops", "Phone"); err != nil {
+		return nil, err
+	}
+	if cd.getAllScrapes, err = SelectAllQuery(db, Scrapes,
+		"ScrapeId", "StartTime", "FinishTime"); err != nil {
 		return nil, err
 	}
 	return cd, nil
@@ -182,70 +204,87 @@ func (cd *ConvoyData) AddRoadDistance(src common.CityState,
 	return err
 }
 
-func (cd *ConvoyData) ForAllLoadPlaces(csfunc func(common.CityState) error) error {
+func (cd *ConvoyData) ForAllLoadPlaces(csfunc CityFunc) error {
 	return forAllCities(cd.getAllLoadPlaces, csfunc)
 }
 
-func (cd *ConvoyData) ForAllMissingCities(csfunc func(common.CityState) error) error {
+func (cd *ConvoyData) ForAllMissingCities(csfunc CityFunc) error {
 	return forAllCities(cd.getAllMissingPlaces, csfunc)
 }
 
-func (cd *ConvoyData) ForAllLocations(lfunc func (common.CityState, geo.SphereCoords) error) error {
+func (cd *ConvoyData) ForAllLocations(lfunc CityLocFunc) error {
 	var locCity, locState []byte
 	var lat, long float64
-	return ForAll(cd.getAllLocations, func () error {
+	return ForAll(cd.getAllLocations, func() error {
 		return lfunc(
-			common.CityState{string(locCity), string(locState)},
-			geo.SphereCoords{lat, long})
+			geo.CityStateLoc{common.CityState{string(locCity), string(locState)},
+				geo.SphereCoords{lat, long}})
 	}, &locCity, &locState, &lat, &long)
 }
 
-func (cd *ConvoyData) ForAllCorrections(
-	cfunc func (from, to common.CityState) error) error {
+func (cd *ConvoyData) ForAllCorrections(cfunc CityPairFunc) error {
 	var fromCity, fromState, toCity, toState []byte
-	return ForAll(cd.getAllCorrections, func () error {
+	return ForAll(cd.getAllCorrections, func() error {
 		return cfunc(common.CityState{
 			string(fromCity), string(fromState)},
 			common.CityState{string(toCity),
-			string(toState)})
+				string(toState)})
 	}, &fromCity, &fromState, &toCity, &toState)
 }
 
-func (cd *ConvoyData) ForAllLoadPairs(
-	lfunc func(from, to common.CityState, 
-		fromLoc, toLoc geo.SphereCoords) error) error {
-	corrections := make(map[string]common.CityState)
-	locations := make(map[string]geo.SphereCoords)
-	if err := cd.ForAllCorrections(func (in, out common.CityState) error {
-		corrections[in.String()] = out
+func (cd *ConvoyData) ForAllLoadPairsMissingDistance(mfunc CityPairLocFunc) error {
+	ufunc := func(from, to geo.CityStateLoc) error {
+		return nil
+	}
+	lfunc := func(from, to geo.CityStateLoc) error {
+		has, err := cd.HasRoadDistance(from.CityState, to.CityState)
+		if err != nil {
+			return err
+		}
+		if has {
+			return nil
+		}
+		return mfunc(from, to)
+	}
+	return cd.ForAllLoadPairs(lfunc, ufunc)
+}
+
+func (cd *ConvoyData) ForAllLoadPairs(loadFunc, undefFunc CityPairLocFunc) error {
+
+	corrections := make(map[common.CityState]common.CityState)
+	locations := make(map[common.CityState]geo.SphereCoords)
+	if err := cd.ForAllCorrections(func(in, out common.CityState) error {
+		corrections[in] = out
 		return nil
 	}); err != nil {
 		return err
 	}
 	if err := cd.ForAllLocations(
-		func (loc common.CityState, spc geo.SphereCoords) error {
-		locations[loc.String()] = spc
-		return nil
-	}); err != nil {
+		func(loc geo.CityStateLoc) error {
+			locations[loc.CityState] = loc.SphereCoords
+			return nil
+		}); err != nil {
 		return err
 	}
 	unresolved := 0
 	output := make(map[string]bool)
 	var fromCity, fromState, toCity, toState []byte
-	if err := ForAll(cd.getAllLoadPlacePairs, func () error {
+	if err := ForAll(cd.getAllLoadPlacePairs, func() error {
 		from := common.CityState{string(fromCity), string(fromState)}
 		to := common.CityState{string(toCity), string(toState)}
-		if cs, has := corrections[from.String()]; has {
+		if cs, has := corrections[from]; has {
 			from = cs
 		}
-		if cs, has := corrections[to.String()]; has {
+		if cs, has := corrections[to]; has {
 			to = cs
 		}
-		fl, hasFl := locations[from.String()]
-		tl, hasTl := locations[to.String()]
+		fl, hasFl := locations[from]
+		tl, hasTl := locations[to]
 		if !hasFl || !hasTl {
 			unresolved++
-			return nil
+			return undefFunc(
+				geo.CityStateLoc{CityState: from},
+				geo.CityStateLoc{CityState: to})
 		}
 		if to.String() < from.String() {
 			from, to = to, from
@@ -257,26 +296,57 @@ func (cd *ConvoyData) ForAllLoadPairs(
 			return nil
 		}
 		output[comb] = true
-		has, err := cd.HasRoadDistance(from, to)
-		if err != nil {
-			return err
-		}
-		if has {
-			return nil
-		}
-		return lfunc(from, to, fl, tl)
+		return loadFunc(geo.CityStateLoc{from, fl}, geo.CityStateLoc{to, tl})
 	}, &fromCity, &fromState, &toCity, &toState); err != nil {
 		return err
 	}
-	log.Println("Skipped", unresolved, "city pairs")
 	return nil
 }
 
-func forAllCities(
-	stmt *sql.Stmt, csfunc func(common.CityState) error) error {
+func forAllCities(stmt *sql.Stmt, csfunc CityFunc) error {
 	var city, state []byte
 	return ForAll(stmt, func() error {
 		return csfunc(common.CityState{string(city),
 			string(state)})
 	}, &city, &state)
+}
+
+func (cd *ConvoyData) ForAllLoads(loadFunc LoadFunc) error {
+	// The following is somewhat convoluted, avoids
+	// "closure needs too many variables; runtime will reject it"
+	var scrapeId int64
+	var ints [4]int
+	var strings [7][]byte
+	var loadTime []byte
+	return ForAll(cd.getAllLoads, func() error {
+		tm, err := time.Parse(common.SqlDateFmt, string(loadTime))
+		if err != nil {
+			return err
+		}
+		return loadFunc(boards.Load{scrapeId, tm,
+			common.CityState{string(strings[1]), string(strings[0])},
+			common.CityState{string(strings[3]), string(strings[2])},
+			string(strings[4]), ints[0], ints[1],
+			string(strings[5]), ints[2], ints[3],
+			string(strings[6])})
+	}, &scrapeId, &loadTime, &strings[0], &strings[1], &strings[2], &strings[3],
+		&strings[4], &ints[0], &ints[1], &strings[5],
+		&ints[2], &ints[3], &strings[6])
+}
+
+func (cd *ConvoyData) ForAllScrapes(sfunc ScrapeFunc) error {
+	var scrapeId int64
+	var startTime, finishTime []byte
+	return ForAll(cd.getAllScrapes, func () error {
+		st, err := time.Parse(common.SqlDateFmt, string(startTime))
+		if err != nil {
+			return err
+		}
+		ft, err := time.Parse(common.SqlDateFmt, string(finishTime))
+		if err != nil {
+			return err
+		}
+		s := scraper.Scrape{scrapeId, st, ft}
+		return sfunc(s)
+	}, &scrapeId, &startTime, &finishTime)
 }

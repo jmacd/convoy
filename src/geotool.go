@@ -220,20 +220,19 @@ func main() {
 	flag.Parse()
 	db, err := data.OpenDb()
 	if err != nil {
-		log.Fatal("Could not open database", err)
+		log.Fatal("Could not open database: ", err)
 	}
 	defer db.Close()
 
 	cf, err := NewCityFinder(db)
 	if err != nil {
-		log.Fatal("NewCityFinder failed", err)
+		log.Fatal("NewCityFinder failed: ", err)
 	}
 
 	switch {
 	case *show_locations:
-		cf.ForAllLocations(func (cs common.CityState, 
-			loc geo.SphereCoords) error {
-			fmt.Println(cs, "->", loc)
+		cf.ForAllLocations(func (csl geo.CityStateLoc) error {
+			fmt.Println(csl.CityState, "->", csl.SphereCoords)
 			return nil
 		})
 	case *show_corrections:
@@ -252,12 +251,11 @@ func main() {
 			return nil
 		})
 	case *show_load_pairs:
-		cf.ForAllLoadPairs(func (from, to common.CityState, 
-					fromLoc, toLoc geo.SphereCoords) error {
-			fmt.Printf("%v(%v) -> %v(%v)\n", 
-				from, fromLoc, to, toLoc)
+		samefunc := func (from, to geo.CityStateLoc) error {
+			fmt.Printf("%v -> %v\n", from, to)
 			return nil
-		})
+		}
+		cf.ForAllLoadPairs(samefunc, samefunc)
 	case len(*try_finding) != 0:
 		cs := common.ParseCityState(*try_finding)
 		if err = cf.tryMissingCity(cs); err != nil {
@@ -265,7 +263,7 @@ func main() {
 		}
 	default:
 		if err = cf.findMissingCities(); err != nil {
-			log.Fatal("findMissingCities failed", err)
+			log.Fatal("findMissingCities failed: ", err)
 		}
 	}
 }

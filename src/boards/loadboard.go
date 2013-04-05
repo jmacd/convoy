@@ -2,8 +2,10 @@
 
 package boards
 
+import "fmt"
 import "time"
 
+import "common"
 import "scraper"
 
 type LoadBoard interface {
@@ -12,11 +14,10 @@ type LoadBoard interface {
 }
 
 type Load struct {
+	ScrapeId    int64
 	PickupDate  time.Time
-	OriginCity  string
-	OriginState string
-	DestCity    string
-	DestState   string
+	Origin      common.CityState
+	Dest        common.CityState
 	LoadType    string // "Full" or "Partial" or ?
 	Length      int
 	Weight      int
@@ -24,4 +25,11 @@ type Load struct {
 	Price       int
 	Stops       int
 	Phone       string
+}
+
+func (l *Load) String() string {
+	return fmt.Sprintf("[%d] %v %v -> %v %v %v %v %v %v %v %v",
+		l.ScrapeId, l.PickupDate.Format(common.SqlDateFmt),
+		l.Origin, l.Dest, l.LoadType, l.Length, l.Weight, 
+		l.Equipment, l.Price, l.Stops, l.Phone)
 }

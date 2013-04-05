@@ -3,6 +3,8 @@ package geo
 import "fmt"
 import "math"
 
+import "common"
+
 // Represent points in 3 dimensions, scaled to slightly larger than
 // the size of Earth
 const (
@@ -19,6 +21,11 @@ type Coords []EarthLoc
 
 type SphereCoords struct {
 	Lat, Long float64 // In degrees
+}
+
+type CityStateLoc struct {
+	common.CityState
+	SphereCoords
 }
 
 // Square of distance between two points; actual distance is a chord

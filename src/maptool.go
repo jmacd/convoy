@@ -68,9 +68,24 @@ type nodeDist struct {
 
 type mapTool struct {
 	data.ConvoyData
-	loc2node map[string]nodeDist
+	loc2node map[common.CityState]nodeDist
 	tree *geo.Tree
 	data *mapData2
+}
+
+type cityNode struct {
+	cs common.CityState
+	nd nodeDist
+}
+
+type cityPair struct {
+	from, to common.CityState
+	fromNodeD, toNodeD nodeDist
+}
+
+type cityDist struct {
+	from, to common.CityState
+	meters int
 }
 
 func keepWay(way *maps.Way) bool {
@@ -140,7 +155,8 @@ func (md *mapData2) mapPass2(bd *maps.BlockData, md1 *mapData1) {
 		}
 		mn := &md.nodes[mc.id]
 		mn.id = mc.id
-		geo.SphereCoords{mapnode.Lat, mapnode.Long}.ToCoords(mn.position[:])
+		geo.SphereCoords{Lat: mapnode.Lat, Long: mapnode.Long}.
+			ToCoords(mn.position[:])
 	}
 	for w := 0; w < len(bd.Ways); w++ {
 		way := &bd.Ways[w]
@@ -215,7 +231,7 @@ func main() {
 		log.Fatal("Could not prepare database", err)
 	}
 	mt.ConvoyData = *cd
-	mt.loc2node = make(map[string]nodeDist)
+	mt.loc2node = make(map[common.CityState]nodeDist)
 
 	osm := maps.NewMap()
 
@@ -310,46 +326,37 @@ func (md *mapData2) Distance(from, to graph.NodeId) float32 {
 	return float32(dist)
 }
 
-type cityLoc struct {
-	cs common.CityState
-	loc geo.SphereCoords
-}
-
-func (mt *mapTool) locateCity(csl cityLoc) nodeDist {
+func (mt *mapTool) locateCity(csl geo.CityStateLoc) nodeDist {
 	var coords [3]geo.EarthLoc
-	csl.loc.ToCoords(coords[:])
+	csl.SphereCoords.ToCoords(coords[:])
 	near := mt.tree.FindNearest(coords[:])
 	dist := geo.GreatCircleDistance(near.Point(), coords[:])
-	log.Printf("%v @ %v nearest %.2fkm", csl.cs, csl.loc, dist / 1000.0)	
+	log.Printf("%v @ %v nearest %.2fkm", 
+		csl.CityState, csl.SphereCoords, dist / 1000.0)	
 	return nodeDist{near.(*node).id, dist}
-}
-
-type cityNode struct {
-	cs common.CityState
-	nd nodeDist
 }
 
 func (mt *mapTool) findCityNodes() error {
 	cpus := runtime.NumCPU()
-	ch1 := make(chan cityLoc, 100000)  // TODO(jmacd): should be "cpus"
+	ch1 := make(chan geo.CityStateLoc, cpus)
 	ch2 := make(chan cityNode, cpus)
 	ch3 := make(chan bool, cpus)
 	for i := 0; i < cpus; i++ {
 		go func() {
 			for csl := range ch1 {
-				ch2 <- cityNode{csl.cs, mt.locateCity(csl)}
+				ch2 <- cityNode{csl.CityState, mt.locateCity(csl)}
 			}
 			ch3 <- true
 		}()
 	}
 	go func() {
 		for csn := range ch2 {
-			mt.loc2node[csn.cs.String()] = csn.nd
+			mt.loc2node[csn.cs] = csn.nd
 		}
 		ch3 <- true
 	}()
-	if err := mt.ForAllLocations(func (cs common.CityState, loc geo.SphereCoords) error {
-		ch1 <- cityLoc{cs, loc}
+	if err := mt.ForAllLocations(func (csl geo.CityStateLoc) error {
+		ch1 <- csl
 		return nil
 	}); err != nil {
 		return err
@@ -361,16 +368,6 @@ func (mt *mapTool) findCityNodes() error {
 	close(ch2)
 	<- ch3
 	return nil
-}
-
-type cityPair struct {
-	from, to common.CityState
-	fromNodeD, toNodeD nodeDist
-}
-
-type cityDist struct {
-	from, to common.CityState
-	meters int
 }
 
 func (mt *mapTool) shortestPath(csp cityPair) int {
@@ -392,7 +389,7 @@ func (mt *mapTool) shortestPath(csp cityPair) int {
 
 func (mt *mapTool) findCityDistances() error {
 	cpus := runtime.NumCPU()
-	ch1 := make(chan cityPair, 100000)  // TODO(jmacd) Should be "cpus"
+	ch1 := make(chan cityPair, cpus)
 	ch2 := make(chan cityDist, cpus)
 	ch3 := make(chan bool, cpus)
 	for i := 0; i < cpus; i++ {
@@ -412,18 +409,18 @@ func (mt *mapTool) findCityDistances() error {
 		}
 		ch3 <- true
 	}()
-	if err := mt.ForAllLoadPairs(func (from, to common.CityState, 
-		fromLoc, toLoc geo.SphereCoords) error {
+	if err := mt.ForAllLoadPairsMissingDistance(
+		func (from, to geo.CityStateLoc) error {
 
-		fromNodeD, has1 := mt.loc2node[from.String()]
-		toNodeD, has2 := mt.loc2node[to.String()]
+		fromNodeD, has1 := mt.loc2node[from.CityState]
+		toNodeD, has2 := mt.loc2node[to.CityState]
 		
 		if !has1 || !has2 {
 			log.Println("Missing a location:", from, to)
 			return nil
 		}
 
-		ch1 <- cityPair{from, to, fromNodeD, toNodeD}
+		ch1 <- cityPair{from.CityState, to.CityState, fromNodeD, toNodeD}
 		return nil
 	}); err != nil {
 		return err
