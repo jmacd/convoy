@@ -2,6 +2,8 @@ package graph
 
 import "container/heap"
 
+// TODO(jmacd): Investigate cause of <100% road distance.  ~1000 city
+// pairs with distance <10km.
 type NodeId uint32
 type heapPos int32
 

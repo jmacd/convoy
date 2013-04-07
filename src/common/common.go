@@ -17,7 +17,8 @@ const (
 	UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) " +
 		"AppleWebKit/537.18 (KHTML, like Gecko) Chrome/24.0.1312.58 Safari/537.18"
 
-	SqlDateFmt = "2006-01-02"
+	sqlDateFmt = "2006-01-02 15:04:05"
+	loadDateFmt = "2006-01-02"
 )
 
 var (
@@ -98,4 +99,16 @@ func PrintMem() {
 		"Total:", ms.TotalAlloc, "Sys:", ms.Sys,
 		"Goroutines:", runtime.NumGoroutine(),
 		"Profile:", pname)
+}
+
+func ParseLoadDate(fmt string) (time.Time, error) {
+	return time.Parse(loadDateFmt, fmt)
+}
+
+func ParseSqlDate(fmt string) (time.Time, error) {
+	return time.Parse(sqlDateFmt, fmt)
+}
+
+func FormatLoadDate(t time.Time) string {
+	return t.Format(loadDateFmt)
 }

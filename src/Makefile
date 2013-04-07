@@ -36,7 +36,7 @@ TARGETS = \
 %.pb.go: %.proto
 	protoc --go_out=. $<
 
-all: test $(TARGETS)
+all: dirs $(TARGETS)
 
 $(BINDIR)/convoy: $(CFILES)
 	go build -o $(BINDIR)/convoy convoy.go
@@ -50,16 +50,25 @@ $(BINDIR)/geotool: $(GFILES)
 $(BINDIR)/loadtool: $(LFILES)
 	go build -o $(BINDIR)/loadtool loadtool.go
 
-test: test_common test_geo test_graph
+dirs:
+	go install boards
+	go install common
+	go install data
+	go install geo
+	go install graph
+	go install maps
+	go install scraper
+
+test: test_common test_geo test_graph test_scraper
 
 test_common:
-	go test -i common
 	go test common
 
 test_geo:
-	go test -i geo
 	go test geo
 
 test_graph:
-	go test -i graph
 	go test graph
+
+test_scraper:
+	go test scraper

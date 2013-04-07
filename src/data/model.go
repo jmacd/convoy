@@ -319,7 +319,7 @@ func (cd *ConvoyData) ForAllLoads(loadFunc LoadFunc) error {
 	var strings [7][]byte
 	var loadTime []byte
 	return ForAll(cd.getAllLoads, func() error {
-		tm, err := time.Parse(common.SqlDateFmt, string(loadTime))
+		tm, err := common.ParseLoadDate(string(loadTime))
 		if err != nil {
 			return err
 		}
@@ -338,13 +338,19 @@ func (cd *ConvoyData) ForAllScrapes(sfunc ScrapeFunc) error {
 	var scrapeId int64
 	var startTime, finishTime []byte
 	return ForAll(cd.getAllScrapes, func () error {
-		st, err := time.Parse(common.SqlDateFmt, string(startTime))
-		if err != nil {
-			return err
+		var st, ft time.Time
+		var err error
+		if len(startTime) != 0 {
+			st, err = common.ParseSqlDate(string(startTime))
+			if err != nil {
+				return err
+			}
 		}
-		ft, err := time.Parse(common.SqlDateFmt, string(finishTime))
-		if err != nil {
-			return err
+		if len(finishTime) != 0 {
+			ft, err = common.ParseSqlDate(string(finishTime))
+			if err != nil {
+				return err
+			}
 		}
 		s := scraper.Scrape{scrapeId, st, ft}
 		return sfunc(s)

@@ -29,7 +29,7 @@ type Load struct {
 
 func (l *Load) String() string {
 	return fmt.Sprintf("[%d] %v %v -> %v %v %v %v %v %v %v %v",
-		l.ScrapeId, l.PickupDate.Format(common.SqlDateFmt),
+		l.ScrapeId, common.FormatLoadDate(l.PickupDate),
 		l.Origin, l.Dest, l.LoadType, l.Length, l.Weight, 
 		l.Equipment, l.Price, l.Stops, l.Phone)
 }
