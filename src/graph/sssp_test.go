@@ -2,52 +2,7 @@ package graph
 
 import "testing"
 
-type testNode struct {
-	neighbors []NodeId
-	costs []float32
-}
-
-type testGraph struct {
-	nodes []testNode
-}
-
-func newGraph() *testGraph {
-	return &testGraph{[]testNode{testNode{}}}
-}
-
-func (g *testGraph) Count() int {
-	return len(g.nodes) - 1
-}
-
-func (g *testGraph) Neighbors(id NodeId) []NodeId {
-	return g.nodes[id].neighbors
-}
-
-func (g *testGraph) Distance(from, to NodeId) float32 {
-	for i, n := range g.nodes[from].neighbors {
-		if n == to {
-			return g.nodes[from].costs[i]
-		}
-	}
-	panic("Not found")
-}
-
-func (g *testGraph) addNode() NodeId {
-	n := NodeId(len(g.nodes))
-	g.nodes = append(g.nodes, testNode{})
-	return n
-}
-
-func (g *testGraph) addEdge(from, to NodeId, cost float32) {
-	addFrom := func (from, to NodeId, cost float32) {
-		g.nodes[from].neighbors = append(g.nodes[from].neighbors, to)
-		g.nodes[from].costs = append(g.nodes[from].costs, cost)
-	}
-	addFrom(from, to, cost)
-	addFrom(to, from, cost)
-}
-
-func (g *testGraph) check(t *testing.T, n0, n1 NodeId, expect []NodeId) {
+func (g *graph) check(t *testing.T, n0, n1 NodeId, expect []NodeId) {
 	s := ShortestPath(g, n0, n1)
 	if len(s) != len(expect) {
 		t.Errorf("Incorrect sssp length got %v want %v", s, expect)

@@ -250,7 +250,6 @@ func (cd *ConvoyData) ForAllLoadPairsMissingDistance(mfunc CityPairLocFunc) erro
 }
 
 func (cd *ConvoyData) ForAllLoadPairs(loadFunc, undefFunc CityPairLocFunc) error {
-
 	corrections := make(map[common.CityState]common.CityState)
 	locations := make(map[common.CityState]geo.SphereCoords)
 	if err := cd.ForAllCorrections(func(in, out common.CityState) error {

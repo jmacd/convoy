@@ -6,6 +6,8 @@ import "io"
 import "log"
 import "os"
 import "runtime"
+import "database/sql"
+import "io/ioutil"
 
 import "common"
 import "data"
@@ -14,6 +16,10 @@ import "graph"
 import "maps"
 
 var input = flag.String("input", "", "OSM PBF formatted file")
+var contraction_program = flag.String("contraction_program",
+	"../bin/contraction", "Program for computing ch-format")
+var tmp_dir = flag.String("tmp_dir",
+	"../bin/contraction", "Program for computing ch-format")
 
 var highwayTypes = map[string]bool{
 	"motorway":       true,
@@ -24,8 +30,8 @@ var highwayTypes = map[string]bool{
 	"primary_link":   true,
 	"secondary":      true,
 	"secondary_link": true,
-	"tertiary":       true,
-	"tertiary_link":  true,
+	"tertiary":       false,
+	"tertiary_link":  false,
 	"living_street":  false,
 	"residential":    false,
 	"unclassified":   false,
@@ -71,6 +77,7 @@ type mapTool struct {
 	loc2node map[common.CityState]nodeDist
 	tree *geo.Tree
 	data *mapData2
+	input *mapData1
 }
 
 type cityNode struct {
@@ -225,10 +232,17 @@ func main() {
 		log.Fatal("Could not open database", err)
 	}
 	defer db.Close()
+	
+	if err := programBody(db); err != nil {
+		log.Fatal("Program error", err)
+	}
+}
+
+func programBody(db *sql.DB) error {
 	var mt mapTool
 	cd, err := data.NewConvoyData(db)
 	if err != nil {
-		log.Fatal("Could not prepare database", err)
+		return err
 	}
 	mt.ConvoyData = *cd
 	mt.loc2node = make(map[common.CityState]nodeDist)
@@ -239,7 +253,7 @@ func main() {
 	if err := osm.ReadMap(readInput(), func(bd *maps.BlockData) {
 		md1.mapPass1(bd)
 	}); err != nil {
-		log.Fatalln("Error reading map:", *input, ":", err)
+		return err
 	}
 	common.PrintMem()
 	log.Println("Using", md1.nextNodeId, "nodes, have",
@@ -249,10 +263,10 @@ func main() {
 	if err := osm.ReadMap(readInput(), func(bd *maps.BlockData) {
 		md2.mapPass2(bd, md1)
 	}); err != nil {
-		log.Fatalln("Error reading map:", *input, ":", err)
+		return err
 	}
-	md1 = nil
 	common.PrintMem()
+	mt.input = md1
 
 	// Sanity check: should have filled-in all edges
 	for _, e := range md2.edges {
@@ -267,11 +281,19 @@ func main() {
 	common.PrintMem()
 
 	if err := mt.findCityNodes(); err != nil {
-		log.Println("findCityNodes:", err)
+		return err
 	}		
-	if err := mt.findCityDistances(); err != nil {
-		log.Println("findCityDistances:", err)
+
+	// if err := mt.findCityDistances(); err != nil {
+	// 	return err
+	// }
+
+	ddsgName, err := mt.writeDdsg()
+	if err != nil {
+		return err
 	}
+	log.Println("Wrote ddsg file:", ddsgName)
+	return nil
 }
 
 func (n *node) Point() geo.Coords {
@@ -317,13 +339,17 @@ func (md *mapData2) Node(i int) geo.Vertex {
 	return &md.nodes[i+1]
 }
 
+func (md *mapData2) Edges() int {
+	return len(md.edges) / 2
+}
+
 func (md *mapData2) Neighbors(n graph.NodeId) []graph.NodeId {
 	return md.nodes[n].neighbors
 }
 
-func (md *mapData2) Distance(from, to graph.NodeId) float32 {
-	dist := geo.GreatCircleDistance(md.nodes[from].position[:], md.nodes[to].position[:])
-	return float32(dist)
+func (md *mapData2) Weight(from, to graph.NodeId) float64 {
+	return geo.GreatCircleDistance(
+		md.nodes[from].position[:], md.nodes[to].position[:])
 }
 
 func (mt *mapTool) locateCity(csl geo.CityStateLoc) nodeDist {
@@ -372,12 +398,12 @@ func (mt *mapTool) findCityNodes() error {
 
 func (mt *mapTool) shortestPath(csp cityPair) int {
 	nodes := graph.ShortestPath(mt.data, csp.fromNodeD.id, csp.toNodeD.id)
-	var dist float32
+	var dist float64
 	for i := 0; i < len(nodes) - 1; i++ {
-		dist += mt.data.Distance(nodes[i], nodes[i+1])
+		dist += mt.data.Weight(nodes[i], nodes[i+1])
 	}
-	dist += float32(csp.fromNodeD.dist)
-	dist += float32(csp.toNodeD.dist)
+	dist += csp.fromNodeD.dist
+	dist += csp.toNodeD.dist
 	fromP := mt.data.nodes[csp.fromNodeD.id].Point()
 	toP := mt.data.nodes[csp.toNodeD.id].Point()
 	log.Printf("%v -> %v = %.1fkm (%.1f%%) %d segments",
@@ -432,4 +458,34 @@ func (mt *mapTool) findCityDistances() error {
 	close(ch2)
 	<- ch3
 	return nil
+}
+
+func (mt *mapTool) writeDdsg() (string, error) {
+	f, err := ioutil.TempFile("", "map_ddsg")
+	// Compute a graph of only road intersections and source/dest locations.
+	keep := make(map[graph.NodeId]bool)
+
+	for _, nd := range mt.loc2node {
+		keep[nd.id] = true
+	}
+	for i := graph.FirstNodeId; i < graph.NodeId(len(mt.data.nodes)); i++ {
+		if len(mt.data.nodes[i].neighbors) > 2 {
+			keep[i] = true
+		}
+	}
+	log.Println("Condensed graph keep", len(keep), "nodes")
+	edges := graph.Condense(mt.data, func (n graph.NodeId) bool {
+		return keep[n]
+	})
+	condensed := graph.EdgelistToGraph(edges)
+	cedges := graph.GraphToEdgelist(condensed)
+	err = graph.WriteDdsg(condensed.Count(), cedges, f)
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	if err := f.Close(); err != nil {
+		return "", err
+	}
+	return name, nil
 }

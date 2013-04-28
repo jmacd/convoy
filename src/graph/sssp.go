@@ -18,7 +18,7 @@ const (
 type Graph interface {
 	Count() int
 	Neighbors(id NodeId) []NodeId
-	Distance(from, to NodeId) float32
+	Weight(from, to NodeId) float64
 }
 
 type qpos struct {
@@ -28,8 +28,8 @@ type qpos struct {
 	// Position of this node in the queue.
         index     heapPos
 
-	// Cost of the shortest path to this node.
-        cost      float32
+	// Weight of the shortest path to this node.
+        weight      float64
 
 	// Tentative or settled parent node.
         parent    NodeId
@@ -80,7 +80,7 @@ func ShortestPath(g Graph, start, end NodeId) []NodeId {
 		p.index = settled
 		neighbors := d.g.Neighbors(p.id)
 		for _, n := range neighbors {
-			q.visit(n, p.cost + g.Distance(p.id, n), p.id)
+			q.visit(n, p.weight + g.Weight(p.id, n), p.id)
 		}
 		rounds++
 	}
@@ -123,22 +123,22 @@ func newDijkstra(g Graph) *dijkstra {
         return d
 }
 
-func (q *queue) visit(id NodeId, cost float32, parent NodeId) {
+func (q *queue) visit(id NodeId, weight float64, parent NodeId) {
         p := &q.data[id]
 	if p.index == settled {
  		return
 	}
         if p.index == unknown {
                 p.parent = parent
-                p.cost = cost
+                p.weight = weight
 		heap.Push(q, p)
 		return
         }
-	if cost >= p.cost {
+	if weight >= p.weight {
 		return
 	}
 	heap.Remove(q, int(p.index))
-	p.cost = cost
+	p.weight = weight
 	p.parent = parent
 	heap.Push(q, p)
 }
@@ -156,7 +156,7 @@ func (q *queue) Len() int {
 }
 
 func (q *queue) Less(i, j int) bool {
-        return q.heap[i].cost < q.heap[j].cost
+        return q.heap[i].weight < q.heap[j].weight
 }
 
 func (q *queue) Swap(i, j int) {

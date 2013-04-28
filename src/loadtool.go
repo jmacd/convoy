@@ -9,8 +9,13 @@ import "runtime"
 import "time"
 
 import "boards"
+import "common"
+
 import "data"
 import "scraper"
+
+var show_by_city = flag.String("show_by_city", 
+	"", "Source or destination")
 
 type LoadSet struct {
 	data.ConvoyData
@@ -105,6 +110,13 @@ func (ls *LoadSet) removeRepost(tday int, tload, yload boards.Load) {
 }
 
 func (ls *LoadSet) readLoads() error {
+	corrections := make(map[common.CityState]common.CityState)
+	if err := ls.ForAllCorrections(func(in, out common.CityState) error {
+		corrections[in] = out
+		return nil
+	}); err != nil {
+		return err
+	}
 	ls.loads = make([]map[boards.Load]int, ls.days)
 	for i, _ := range ls.loads {
 		ls.loads[i] = make(map[boards.Load]int)
@@ -119,6 +131,12 @@ func (ls *LoadSet) readLoads() error {
 			return nil
 		}
 		load.ScrapeId = 0
+		if corr, has := corrections[load.Origin]; has {
+			load.Origin = corr
+		}
+		if corr, has := corrections[load.Dest]; has {
+			load.Dest = corr
+		}
 		if cnt, has := ls.loads[day][load]; has {
 			ls.loads[day][load] = cnt + 1
 			ls.dups++
@@ -169,8 +187,24 @@ func NewLoadSet(db *sql.DB) (*LoadSet, error) {
 	if err = ls.readScrapes(); err != nil {
 		return nil, err
 	}
+	if err = ls.readLoads(); err != nil {
+		return nil, err
+	}
+	return ls, nil
+}
 
-	return ls, ls.readLoads()
+func (ls *LoadSet) showByCity(cs common.CityState) error {
+	for dayno, daymap := range ls.loads {
+		for load, count := range daymap {
+			daysout := ls.daysFromZero(load.PickupDate) - dayno
+			if load.Origin == cs {
+				fmt.Print(dayno, "/", daysout, " [", load, "] SRC ", count, "\n")
+			}  else if load.Dest == cs {
+				fmt.Print(dayno, "/", daysout, " [", load, "] DST ", count, "\n")
+			}
+		}
+	}
+	return nil
 }
 
 func main() {
@@ -190,5 +224,8 @@ func main() {
 	if err != nil {
 		log.Fatalln("Could not read loads", err)
 	}
-	_ = ls
+	switch {
+	case len(*show_by_city) != 0:
+		ls.showByCity(common.ParseCityState(*show_by_city))
+	}
 }
