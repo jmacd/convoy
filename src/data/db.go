@@ -4,6 +4,7 @@ import "database/sql"
 import "flag"
 import "log"
 import "strings"
+import "runtime"
 import _ "github.com/Go-SQL-Driver/MySQL"
 
 type TableName string
@@ -106,4 +107,22 @@ func ForAll(stmt *sql.Stmt, afunc func() error, a ...interface{}) error {
 		return err
 	}
 	return nil
+}
+
+func Main(body func (*sql.DB) error) {
+	flag.Parse()
+	argv := flag.Args()
+	runtime.GOMAXPROCS(runtime.NumCPU())
+	if len(argv) != 0 {
+		log.Fatalln("Extra args:", argv)
+	}
+	db, err := OpenDb()
+	if err != nil {
+		log.Fatal("Could not open database", err)
+	}
+	defer db.Close()
+	
+	if err := body(db); err != nil {
+		log.Fatal("Program error", err)
+	}
 }

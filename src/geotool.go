@@ -17,8 +17,6 @@ var show_load_places = flag.Bool("show_load_places", false, "")
 var show_load_pairs = flag.Bool("show_load_pairs", false, "")
 var show_missing_cities = flag.Bool("show_missing_cities", false, "")
 var try_finding = flag.String("try_finding", "", "")
-var http_port = flag.Int("http_port", 8000, "")
-var xvfb_port_offset = flag.Int("xvfb_port_offset", 1, "")
 
 var try_spell_correction = true
 
@@ -217,22 +215,21 @@ func NewCityFinder(db *sql.DB) (*CityFinder, error) {
 }
 
 func main() {
+	data.Main(programBody)
+}
+
+func programBody(db *sql.DB) error {
 	flag.Parse()
-	db, err := data.OpenDb()
-	if err != nil {
-		log.Fatal("Could not open database: ", err)
-	}
-	defer db.Close()
 
 	cf, err := NewCityFinder(db)
 	if err != nil {
-		log.Fatal("NewCityFinder failed: ", err)
+		return err
 	}
 
 	switch {
 	case *show_locations:
-		cf.ForAllLocations(func (csl geo.CityStateLoc) error {
-			fmt.Println(csl.CityState, "->", csl.SphereCoords)
+		cf.ForAllLocations(func (id int64, csl geo.CityStateLoc) error {
+			fmt.Println("[", id, "] ", csl.CityState, "->", csl.SphereCoords)
 			return nil
 		})
 	case *show_corrections:
@@ -259,11 +256,12 @@ func main() {
 	case len(*try_finding) != 0:
 		cs := common.ParseCityState(*try_finding)
 		if err = cf.tryMissingCity(cs); err != nil {
-			log.Fatalf("Failed finding %s: %s", cs, err)
+			return err
 		}
 	default:
 		if err = cf.findMissingCities(); err != nil {
-			log.Fatal("findMissingCities failed: ", err)
+			return err
 		}
 	}
+	return nil
 }

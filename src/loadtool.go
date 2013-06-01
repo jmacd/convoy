@@ -208,24 +208,24 @@ func (ls *LoadSet) showByCity(cs common.CityState) error {
 }
 
 func main() {
+	data.Main(programBody)
+}
+
+func programBody(db *sql.DB) error {
 	flag.Parse()
 	argv := flag.Args()
 	runtime.GOMAXPROCS(runtime.NumCPU())
 	if len(argv) != 0 {
 		log.Fatalln("Extra args:", argv)
 	}
-	db, err := data.OpenDb()
-	if err != nil {
-		log.Fatalln("Could not open database", err)
-	}
-	defer db.Close()
 
 	ls, err := NewLoadSet(db)
 	if err != nil {
-		log.Fatalln("Could not read loads", err)
+		return nil
 	}
 	switch {
 	case len(*show_by_city) != 0:
 		ls.showByCity(common.ParseCityState(*show_by_city))
 	}
+	return nil
 }

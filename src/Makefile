@@ -24,14 +24,16 @@ CFILES = convoy.go $(GOFILES)
 MFILES = maptool.go $(GOFILES)
 GFILES = geotool.go $(GOFILES)
 LFILES = loadtool.go $(GOFILES)
+OFILES = osrmtool.go $(GOFILES)
 
 BINDIR = ../bin
 
 TARGETS = \
 	$(BINDIR)/convoy \
-	$(BINDIR)/maptool \
 	$(BINDIR)/geotool \
-	$(BINDIR)/loadtool
+	$(BINDIR)/loadtool \
+	$(BINDIR)/maptool \
+	$(BINDIR)/osrmtool
 
 %.pb.go: %.proto
 	protoc --go_out=. $<
@@ -49,6 +51,9 @@ $(BINDIR)/geotool: $(GFILES)
 
 $(BINDIR)/loadtool: $(LFILES)
 	go build -o $(BINDIR)/loadtool loadtool.go
+
+$(BINDIR)/osrmtool: $(OFILES)
+	go build -o $(BINDIR)/osrmtool osrmtool.go
 
 dirs:
 	go install boards

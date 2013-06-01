@@ -1,12 +1,13 @@
 package common
 
-//import "bytes"
 import "encoding/json"
 import "errors"
 import "log"
 import "regexp"
 import "net/url"
 import "strings"
+
+// TODO improve this logic. first, need to record query results.
 
 const (
 	googleHost    = "www.googleapis.com"
@@ -27,6 +28,51 @@ var wikiLinkRe = regexp.MustCompile(`http://` +
 
 var stripSiteRe = regexp.MustCompile(`(.*) site:.*`)
 
+type JsonGoogle struct {
+	Kind string
+	Url *JsonGoogleUrl
+	Queries *JsonGoogleQuery
+	SearchInformation *JsonGoogleSearchInformation
+	Spelling *JsonGoogleSpelling
+	Items []*JsonGoogleItem
+	Error *JsonGoogleError
+}
+
+type JsonGoogleUrl struct {
+	Type string
+	Template string
+}
+
+type JsonGoogleQuery struct {
+	Request []JsonGoogleRequest
+}
+
+type JsonGoogleSpelling struct {
+	CorrectedQuery string
+}
+
+type JsonGoogleSearchInformation struct {
+	SearchTime float64
+	TotalResults string
+}
+
+type JsonGoogleItem struct {
+	Kind string
+	Title string
+	Link string
+	Snippet string
+}
+
+type JsonGoogleRequest struct {
+	SearchTerms string
+	Count int
+	StartIndex int
+}
+
+type JsonGoogleError struct {
+	Message string
+}
+
 func CorrectCitySpelling(name CityState) (CityState, string, string, error) {
 	spaceState := " " + name.State
 	query := name.City + spaceState + " site:" + WikiHost
@@ -36,50 +82,34 @@ func CorrectCitySpelling(name CityState) (CityState, string, string, error) {
 	if err != nil {
 		return CityState{}, "", "", nil
 	}
-	var res interface{}
-	if err = json.Unmarshal(googXml, &res); err != nil {
-		log.Print("Google gave bad JSON: ", string(googXml))
+	return processGoogleResult(name, googXml)
+}
+
+func processGoogleResult(name CityState, xml []byte) (CityState, string, string, error) {
+	spaceState := " " + name.State
+	var res JsonGoogle
+	if err := json.Unmarshal(xml, &res); err != nil {
+		log.Print("Google gave bad JSON: ", string(xml))
 		return CityState{}, "", "", nil
 	}
-	jso := res.(map[string]interface{})
-	if gerror, has := jso["error"]; has {
-		jsoError := gerror.(map[string]interface{})
-		return CityState{}, "", "", errors.New(jsoError["message"].(string))
+	if res.Error != nil {
+		return CityState{}, "", "", errors.New(res.Error.Message)
 	}
-	// TODO(jmacd): Create a Go type hierarchy instead of dealing w/ generics?
-	// if true {
-	// 	var buf bytes.Buffer
-	// 	json.Indent(&buf, googXml, "", "\t")
-	// 	log.Print("Google JSON: ", string(buf.Bytes()))
-	// }
 	spellName := name
-	if spell, has := jso["spelling"]; has {
-		jsoSpell := spell.(map[string]interface{})
-		if corrected, has := jsoSpell["correctedQuery"]; has {
-			switch cv := corrected.(type) {
-			case string:
-				m := stripSiteRe.FindStringSubmatch(cv)
-				if len(m) != 0 && strings.HasSuffix(m[1], spaceState) {
-					spellName = CityState{m[1][:len(m[1])-
-						len(spaceState)], name.State}
-					//log.Println("Spelling", name, "->", spellName)
-				}
-			}
+	if res.Spelling != nil && res.Spelling.CorrectedQuery != "" {
+		m := stripSiteRe.FindStringSubmatch(res.Spelling.CorrectedQuery)
+		if len(m) != 0 && strings.HasSuffix(m[1], spaceState) {
+			spellName = CityState{m[1][:len(m[1])-
+					len(spaceState)], name.State}
+			//log.Println("Spelling", name, "->", spellName)
 		}
 	}
 	var wikiNames []string
-	if items, has := jso["items"]; has {
-		jsoItems := items.([]interface{})
-		for _, item := range jsoItems {
-			jsoItem := item.(map[string]interface{})
-			if jsoLink, has := jsoItem["link"]; has {
-				switch link := jsoLink.(type) {
-				case string:
-					m := wikiLinkRe.FindStringSubmatch(link)
-					if len(m) != 0 {
-						wikiNames = append(wikiNames, m[1])
-					}
-				}
+	for _, item := range res.Items {
+		if item.Link != "" {
+			m := wikiLinkRe.FindStringSubmatch(item.Link)
+			if len(m) != 0 {
+				wikiNames = append(wikiNames, m[1])
 			}
 		}
 	}

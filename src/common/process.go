@@ -9,7 +9,13 @@ import "strings"
 
 var debugSubprocs = flag.Bool("debug_subprocs", false, "")
 
-type Cmd exec.Cmd
+type Cmd interface {
+	Cleanup()
+}
+
+type impl struct {
+	*exec.Cmd
+}
 
 type pipeData struct {
 	cmd, data string
@@ -51,7 +57,13 @@ func printOut(ch <-chan pipeData) {
 	}
 }
 
-func StartProcess(cmd string, env []string, args ...string) (*exec.Cmd, error) {
+func (c impl) Cleanup() {
+	if c.Cmd != nil {
+		c.Cmd.Process.Kill()	
+	}
+}
+
+func StartProcess(cmd string, env []string, args ...string) (Cmd, error) {
 	proc := exec.Command(cmd, args...)
 	proc.Env = env
 	var err error
@@ -71,6 +83,5 @@ func StartProcess(cmd string, env []string, args ...string) (*exec.Cmd, error) {
 	if err = proc.Start(); err != nil {
 		return nil, err
 	}
-	return proc, nil
+	return impl{proc}, nil
 }
-

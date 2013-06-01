@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS Corrections (
        COLLATE = utf8_bin;
 
 CREATE TABLE IF NOT EXISTS Locations (
+       Id    	    	 BIGINT		NOT NULL AUTO_INCREMENT,
        LocCity 		 VARCHAR(64)	NOT NULL,
        LocState		 CHAR(2)	NOT NULL,
        Latitude		 DOUBLE		NOT NULL,
@@ -55,7 +56,7 @@ CREATE TABLE IF NOT EXISTS Locations (
        Determined        VARCHAR(64)	NOT NULL,
 
        INDEX LCityState	 (LocCity, LocState) USING HASH,
-       PRIMARY KEY (LocCity, LocState)
+       PRIMARY KEY (Id)
        )
        CHARACTER SET = utf8,
        COLLATE = utf8_bin;
@@ -79,32 +80,19 @@ CREATE TABLE IF NOT EXISTS WikipediaUnknown (
        CHARACTER SET = utf8,
        COLLATE = utf8_bin;
 
-CREATE TABLE IF NOT EXISTS RoadDistance (
-       SourceCity 		 VARCHAR(64)	NOT NULL,
-       SourceState		 CHAR(2)	NOT NULL,
-       DestCity 		 VARCHAR(64)	NOT NULL,
-       DestState		 CHAR(2)	NOT NULL,
-       Kilometers		 INTEGER	NOT NULL,
-
-       INDEX EndPoints (SourceCity, SourceState, DestCity, DestState) USING HASH,
-       PRIMARY KEY (SourceCity, SourceState, DestCity, DestState)
-       )
-       CHARACTER SET = utf8,
-       COLLATE = utf8_bin;
-
 CREATE VIEW LoadCityStates (C, S) AS 
        SELECT OriginCity C, OriginState S FROM TruckLoads
        UNION ALL SELECT DestCity C, DestState S FROM TruckLoads;
 
-CREATE VIEW GeoCityStates (C, S) AS 
-       SELECT InCity C, InState S FROM Corrections
-       UNION ALL SELECT LocCity C, LocState S FROM Locations;
+-- CREATE VIEW GeoCityStates (C, S) AS 
+--       SELECT InCity C, InState S FROM Corrections
+--       UNION ALL SELECT LocCity C, LocState S FROM Locations;
 
 CREATE VIEW LoadCityStatesGrouped (C, S) AS
        SELECT C, S FROM LoadCityStates GROUP BY C, S;
 
-CREATE VIEW GeoCityStatesGrouped (C, S) AS
-	SELECT C, S FROM GeoCityStates AS Places GROUP BY C, S;
+-- CREATE VIEW GeoCityStatesGrouped (C, S) AS
+-- 	SELECT C, S FROM GeoCityStates AS Places GROUP BY C, S;
 
 -- TODO(jmacd) Apparently this is slow because MySQL decides
 -- to do sequential scan for very large "IN" expressions; fix.

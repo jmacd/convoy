@@ -221,21 +221,7 @@ func newMapData2(md1 *mapData1) *mapData2 {
 }
 
 func main() {
-	flag.Parse()
-	argv := flag.Args()
-	runtime.GOMAXPROCS(runtime.NumCPU())
-	if len(argv) != 0 {
-		log.Fatalln("Extra args:", argv)
-	}
-	db, err := data.OpenDb()
-	if err != nil {
-		log.Fatal("Could not open database", err)
-	}
-	defer db.Close()
-	
-	if err := programBody(db); err != nil {
-		log.Fatal("Program error", err)
-	}
+	data.Main(programBody)
 }
 
 func programBody(db *sql.DB) error {
@@ -381,7 +367,7 @@ func (mt *mapTool) findCityNodes() error {
 		}
 		ch3 <- true
 	}()
-	if err := mt.ForAllLocations(func (csl geo.CityStateLoc) error {
+	if err := mt.ForAllLocations(func (_ int64, csl geo.CityStateLoc) error {
 		ch1 <- csl
 		return nil
 	}); err != nil {

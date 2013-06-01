@@ -48,17 +48,27 @@ func SleepAWhile(url, query string) {
 	time.Sleep(time.Second * 2)
 }
 
+func ColonPort(p int) string {
+	return fmt.Sprint(":", p)
+}
+
 func GetUrl(host, uri, query string) ([]byte, error) {
-	return GetUrlInternal("http", host, uri, query, client)
+	return getUrlInternal("http", host, uri, query, client, true)
+}
+
+func GetUrlFast(host, uri, query string) ([]byte, error) {
+	return getUrlInternal("http", host, uri, query, client, false)
 }
 
 func GetSecureUrl(host, uri, query string) ([]byte, error) {
-	return GetUrlInternal("https", host, uri, query, secure)
+	return getUrlInternal("https", host, uri, query, secure, true)
 }
 
-func GetUrlInternal(
-	protocol, host, uri, query string, c *http.Client) ([]byte, error) {
-	SleepAWhile(uri, query)
+func getUrlInternal(
+	protocol, host, uri, query string, c *http.Client, addSleep bool) ([]byte, error) {
+	if addSleep {
+		SleepAWhile(uri, query)
+	}
 	url := protocol + "://" + host + uri + query
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {

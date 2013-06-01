@@ -1,6 +1,5 @@
 package common
 
-import "log"
 import "testing"
 import "runtime"
 
@@ -34,7 +33,6 @@ func TestCon(t *testing.T) {
 	count := 0
 	for _ = range o {
 		count++
-		log.Println("Received ", count)
 	}
 	if count != N {
 		t.Error("Failed: ", c)

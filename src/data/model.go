@@ -35,7 +35,6 @@ const (
 	Locations         TableName = "Locations"
 	TruckLoads        TableName = "TruckLoads"
 	LoadCityStates    TableName = "LoadCityStates"
-	GeoCityStates     TableName = "GeoCityStates"
 	GoogleUnknown     TableName = "GoogleUnknown"
 	WikipediaUnknown  TableName = "WikipediaUnknown"
 	UnknownCityStates TableName = "UnknownCityStates"
@@ -44,7 +43,7 @@ const (
 )
 
 type CityFunc func(common.CityState) error
-type CityLocFunc func(geo.CityStateLoc) error
+type CityLocFunc func(int64, geo.CityStateLoc) error
 type CityPairFunc func(from, to common.CityState) error
 type CityPairLocFunc func(from, to geo.CityStateLoc) error
 type LoadFunc func(load boards.Load) error
@@ -121,7 +120,7 @@ func NewConvoyData(db *sql.DB) (*ConvoyData, error) {
 		return nil, err
 	}
 	if cd.getAllLocations, err = SelectGroupQuery(db, Locations,
-		"LocCity", "LocState", "Latitude", "Longitude"); err != nil {
+		"Id", "LocCity", "LocState", "Latitude", "Longitude"); err != nil {
 		return nil, err
 	}
 	if cd.getAllLoads, err = SelectAllQuery(db, TruckLoads,
@@ -215,11 +214,12 @@ func (cd *ConvoyData) ForAllMissingCities(csfunc CityFunc) error {
 func (cd *ConvoyData) ForAllLocations(lfunc CityLocFunc) error {
 	var locCity, locState []byte
 	var lat, long float64
+	var id int64
 	return ForAll(cd.getAllLocations, func() error {
-		return lfunc(
+		return lfunc(id,
 			geo.CityStateLoc{common.CityState{string(locCity), string(locState)},
 				geo.SphereCoords{lat, long}})
-	}, &locCity, &locState, &lat, &long)
+	}, &id, &locCity, &locState, &lat, &long)
 }
 
 func (cd *ConvoyData) ForAllCorrections(cfunc CityPairFunc) error {
@@ -259,7 +259,7 @@ func (cd *ConvoyData) ForAllLoadPairs(loadFunc, undefFunc CityPairLocFunc) error
 		return err
 	}
 	if err := cd.ForAllLocations(
-		func(loc geo.CityStateLoc) error {
+		func(id int64, loc geo.CityStateLoc) error {
 			locations[loc.CityState] = loc.SphereCoords
 			return nil
 		}); err != nil {

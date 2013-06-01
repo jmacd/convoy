@@ -19,9 +19,6 @@ import "common"
 import "data"
 import "scraper"
 
-var http_port = flag.Int("http_port", 8000, "")
-var xvfb_port_offset = flag.Int("xvfb_port_offset", 1, "")
-
 const (
 	scrapeToken     = "Scraper-Token"
 	scrapeAction    = "Scraper-Action"
@@ -299,9 +296,7 @@ func startServer(pageCh <-chan scraper.Page) (*scraper.Browser, error) {
 	http.HandleFunc("/response", response)
 	http.HandleFunc("/", handle)
 
-	return scraper.NewBrowser(
-		*http_port, *xvfb_port_offset, "/scrape",
-		http.DefaultServeMux)
+	return scraper.NewBrowser("/scrape", http.DefaultServeMux)
 }
 
 func main() {
