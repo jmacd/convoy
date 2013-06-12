@@ -12,6 +12,7 @@ import "runtime/pprof"
 import "time"
 
 var mem_profile = flag.Bool("mem_profile", false, "Write memory profiles")
+var num_cpu = flag.Int("num_cpu", runtime.NumCPU(), "Number of CPUs")
 
 const (
 	UserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_7_5) " +
@@ -35,7 +36,9 @@ func init() {
 	// { DisableCompression: true }
 
 	client = &http.Client{
-		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment},
+		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
+			DisableCompression: true,
+		},
 	}
 	secure = &http.Client{
 		Transport: &http.Transport{Proxy: http.ProxyFromEnvironment,
@@ -121,4 +124,8 @@ func ParseSqlDate(fmt string) (time.Time, error) {
 
 func FormatLoadDate(t time.Time) string {
 	return t.Format(loadDateFmt)
+}
+
+func NumCPU() int {
+	return *num_cpu
 }

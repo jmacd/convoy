@@ -7,6 +7,8 @@ import "strings"
 import "runtime"
 import _ "github.com/Go-SQL-Driver/MySQL"
 
+import "common"
+
 type TableName string
 
 var dbName = flag.String("db_name", "", "Name of the DB")
@@ -112,7 +114,7 @@ func ForAll(stmt *sql.Stmt, afunc func() error, a ...interface{}) error {
 func Main(body func (*sql.DB) error) {
 	flag.Parse()
 	argv := flag.Args()
-	runtime.GOMAXPROCS(runtime.NumCPU())
+	runtime.GOMAXPROCS(common.NumCPU())
 	if len(argv) != 0 {
 		log.Fatalln("Extra args:", argv)
 	}
